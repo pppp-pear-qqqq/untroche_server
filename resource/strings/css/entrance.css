@@ -1,0 +1,50 @@
+#main {
+	flex-direction: column;
+	text-align: center;
+	margin: auto 0;
+	h1 {
+		font-weight: normal;
+		border-bottom: 1px solid #767676;
+	}
+	div {
+		margin: 4px auto;
+		gap: 20px;
+	}
+}
+#form {
+	opacity: 0;
+	display: none;
+	position: fixed;
+	width: 100vw;
+	height: 100vh;
+	background-color: #202020f0;
+	transition: opacity 200ms;
+	>* {
+		position: fixed;
+		left: 50vw;
+		top: 50vh;
+		padding: 8px;
+		border: 1px solid #767676;
+		transform: translate(-50%, -50%);
+		flex-direction: column;
+		gap: 8px;
+		transition: opacity 1s;
+		>label {
+			display: flex;
+			justify-content: space-between;
+			>.submit {
+				margin-left: auto;
+			}
+		}
+		>div {
+			flex-direction: column;
+			gap: 4px;
+			select {
+				width: 16em;
+			}
+			p {
+				width: 30em;
+			}
+		}
+	}
+}

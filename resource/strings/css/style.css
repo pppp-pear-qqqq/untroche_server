@@ -1,0 +1,159 @@
+/* キーフレーム */
+@keyframes rainbow {
+	100% {
+		background-position-x: 200%;
+	}
+}
+@keyframes select {
+	0% {
+		width: 0%;
+	}
+	100% {
+		width: calc(100% + 8px);
+	}
+}
+@keyframes slidein_left {
+	0% {
+		opacity: 0;
+		transform: translateX(-100%);
+	}
+	100% {
+		opacity: 1;
+	}
+}
+@keyframes slidein_right {
+	0% {
+		opacity: 0;
+		transform: translateX(100%);
+	}
+	100% {
+		opacity: 1;
+	}
+}
+
+/* 基幹部分 */
+* {
+	margin: 0;
+	padding: 0;
+}
+html {
+	color: #d4d4da;
+	font: 14px 'Noto Sans JP', sans-serif;
+	line-height: 1.8;
+}
+
+/* 全体-要素 */
+div {
+	display: flex;
+}
+a {
+	text-decoration-line: underline;
+	text-decoration: color solid 1px;
+	cursor: pointer;
+}
+a:hover {
+	text-decoration-thickness: 1.2px;
+	text-decoration-color: #ff3380;
+}
+a:link {
+	color: #aaffff;
+}
+a:visited {
+	color: #ffaaff;
+}
+input, textarea {
+	background: none;
+	color: inherit;
+	font: 14px 'Noto Sans JP', sans-serif;
+	border-style: solid;
+	border-width: 1px;
+}
+input[type=checkbox] {
+	display: none;
+}
+
+/* 全体-複数個所 */
+.scroll {
+	scrollbar-gutter: stable;
+	border-right-color: #0000;
+	transition: border-right-color 0.2s;
+}
+.scroll:hover {
+	border-right-color: #767676;
+}
+.scroll::-webkit-scrollbar {
+	width: 4px;
+	height: 4px;
+}
+.scroll::-webkit-scrollbar-thumb {
+	border-right: 100vmax solid;
+	border-right-color: inherit;
+	border-radius: 4px 0 0 4px;
+}
+.hide{
+	display: none !important;
+}
+br.narrow{
+	display: none;
+}
+span[onclick] {
+	user-select: none;
+	cursor: pointer;
+}
+p.right,span.right,a.right {
+	margin-left: auto;
+}
+
+.bold{
+	font-weight: bolder;
+}
+.italic{
+	font-style: italic;
+}
+.underline{
+	text-decoration-line: underline;
+}
+.linethrough{
+	text-decoration-line: line-through;
+}
+.rainbow{
+	font-weight: bolder;
+	background: linear-gradient(to right, #ffaaff, #ffffaa, #aaffff, #ffaaff) 0% center/200%;
+	background-clip: text;
+	-webkit-background-clip: text;
+	-webkit-text-fill-color: transparent;
+	animation: rainbow 12s linear infinite;
+}
+.large {
+	font-size: larger;
+}
+.small {
+	font-size: smaller;
+}
+
+/* 全体-単一箇所 */
+body {
+	background-color: #232328;
+	height: 100vh;
+	display: flex;
+	flex-direction: column;
+}
+.back::before {
+	content: 'Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.';
+	display: unset;
+	position: fixed;
+	width: 100vh;
+	height: 100vw;
+	top: 0;
+	left: 0;
+	z-index: -1;
+	font-size: 6vw;
+	line-height: 1.2;
+	color: #0000;
+	text-shadow: 0 0 12px #ffffff0c;
+	word-break: break-all;
+	overflow: hidden;
+	transform-origin: left top;
+	transform: translateY(95vh) rotate(270deg);
+	user-select: none;
+}

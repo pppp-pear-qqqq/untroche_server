@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="UTF-8">
+		<meta name="viewport" content="width=device-width,initial-scale=1">
+		<title>"Strings"</title>
+		<link rel="preconnect" href="https://fonts.googleapis.com">
+		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+		<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;800&display=swap">
+		<link rel="stylesheet" type="text/css" href="strings/css/game.css">
+		<link rel="stylesheet" type="text/css" href="strings/css/style.css">
+		<link rel="stylesheet" type="text/css" href="strings/api/css/alertify.min.css">
+		<script src="strings/api/alertify.min.js"></script>
+		<script src="strings/js/cookie.class.js"></script>
+		<script src="strings/js/ajax.class.js"></script>
+		<script src="strings/js/battle.js"></script>
+		<script src="strings/js/common.js"></script>
+		<script src="strings/js/game.js"></script>
+	</head>
+	<template id="template_character">
+		<div class="character">
+			<p class="eno"></p><p class="acronym"></p><p class="name"></p>
+			<p class="word"></p>
+			<div class="footer"><span class="location"></span><a class="to right">話しかける</a><a class="battle win">勝つつもりで挑む</a><a class="battle lose">負けるつもりで挑む</a></div>
+		</div>
+	</template>
+	<template id="template_talk">
+		<div class="talk">
+			<p class="to hide"></p>
+			<p class="name"></p><p class="eno"></p>
+			<p class="word"></p>
+			<div class="footer"><span class="location"></span><span class="id right"></span><span class="timestamp"></span><a class="reply">Reply</a></div>
+		</div>
+	</template>
+	<template id="template_fragment">
+		<div class="fragment">
+			<p class="name"></p>
+			<p class="status"></p>
+			<p class="skill"></p>
+		</div>
+	</template>
+	<template id="template_profile_fragment">
+		<div class="fragment">
+			<p class="name"></p><p class="category"></p>
+			<p class="lore"></p>
+		</div>
+	</template>
+	<template id="template_battle_reserve">
+		<div class="item">
+			<p class="message"></p>
+			<div class="option"></div>
+		</div>
+	</template>
+	<template id="template_battle_log">
+		<div>
+			<a class="left"><span class="eno"></span><span class="name"></span></a>
+			<a class="right"><span class="eno"></span><span class="name"></span></a>
+		</div>
+	</template>
+	<script>var eno = {{eno}};{% for p in display %}explore_text.push('{{p}}');{% endfor %}</script>
+	<body class="back">
+		<div id="header">
+			<p class="system">"Strings"</p><p><span class="eno">Eno.{{eno}}</span><span class="name">{{name}}</span></p>
+		</div>
+		<div id="main">
+			<div id="location" class="">
+				<div class="location">
+					<p class="name">現在位置:<span>{{location.name}}</span></p>
+					<p class="lore">{{location.lore}}</p>
+				</div>
+				<h4>キャラクターリスト<a class="reload">更新</a></h4>
+				<div class="characters scroll"></div>
+			</div>
+			<div id="explore" class="">
+				<div class="scroll" onclick="explore()">
+					<div class="log"></div>
+				</div>
+			</div>
+			<div id="chat" class="hide">
+				<div class="tabs scroll"></div>
+				<div class="main scroll">
+					<div class="log"></div>
+					<div class="search hide">
+						<p><span>対象ロケーション</span><input type="text" name="location" placeholder="現在地"></p>
+						<p><span>発言者Eno</span><input type="text" name="from" placeholder="指定なし"></p>
+						<p><span>宛先Eno</span><input type="text" name="to" placeholder="指定なし"></p>
+						<p><span>検索文字列</span><input type="text" name="word" placeholder="指定なし"></p>
+						<button type="button" onclick="search_timeline()">検索</button>
+					</div>
+				</div>
+				<div class="preview hide">
+					<div class="talk">
+						<p class="to hide"></p>
+						<p class="name"></p><p class="eno"></p>
+						<p class="word"></p>
+						<div class="footer"><span class="location"></span><a class="right" onclick="preview_close()">Close</a></div>
+					</div>
+				</div>
+				<div class="talk" style="border-color: {{color}}">
+					<p class="to">>>Eno<input type="number" name="to" placeholder="指定なし"></p><label class="lock"><input type="checkbox" name="location"><img></label>
+					<input type="text" class="name" name="name" placeholder="名前" value="{{name}}"><p class="eno">Eno.{{eno}}</p>
+					<textarea class="word" name="word" placeholder="発言内容"></textarea>
+					<div class="footer"><span class="bold" onclick="add_decoration_tag('[b|', '|b]')">太字</span><span class="italic" onclick="add_decoration_tag('[i|', '|i]')">斜体</span><span class="underline" onclick="add_decoration_tag('[u|', '|u]')">下線</span><span class="linethrough" onclick="add_decoration_tag('[s|', '|s]')">取消</span><span class="rainbow" onclick="add_decoration_tag('[rainbow|', '|rainbow]')">虹色</span><span onclick="add_decoration_tag('[large|', '|large]')">大字</span><span onclick="add_decoration_tag('[small|', '|small]')">小字</span><a class="right" onclick="preview_open()">プレビュー</a><a onclick="talk()">発言</a></div>
+				</div>
+			</div>
+			<div id="fragment" class="hide">
+				<div class="header"><p>戦闘用・公開</p><p>公開</p><p>非公開</p></div>
+				<div class="container scroll"></div>
+				<div class="container trash scroll hide"></div>
+				<div class="footer">
+					<p class="status" data-hp="0" data-mp="0" data-atk="0" data-tec="0"></p>
+					<p class="update">更新</p>
+					<p class="trash">廃棄</p>
+					<p class="trade linethrough">譲渡</p>
+				</div>
+				<div class="desc scroll">
+					<p class="name"></p>
+					<p class="category"></p>
+					<p class="lore"></p>
+					<p class="status"></p>
+					<div class="skill">
+						<input type="text" class="name">
+						<input type="text" class="word" placeholder="スキル発動時台詞">
+						<p class="lore"></p>
+						<p class="timing"></p>
+						<p class="effect"></p>
+					</div>
+				</div>
+			</div>
+			<div id="battle" class="hide">
+				<div class="reserve scroll"></div>
+				<h4>戦闘ログ<a class="reload">更新</a></h4>
+				<div class="log scroll"></div>
+			</div>
+			<div id="other" class="hide">
+				<label>Discord連携<input type="text" placeholder="ウェブフックURL"></label>
+				<div class="command">
+					<button type="button" class="my_profile">自分のプロフィール</button>
+					<button type="button" onclick="logout()">ログアウト</button>
+				</div>
+				<h4>キャラクターリスト<a class="reload">更新</a></h4>
+				<div class="characters"></div>
+			</div>
+			<div id="profile" class="hide">
+				<div class="scroll">
+					<div class="data"><span class="eno"></span><span class="acronym right"></span><input type="color" class="color"></div>
+					<p class="fullname"></p>
+					<div class="name hide">発言名：<input type="text" value=""></div>
+					<h4>Comment.</h4>
+					<input type="text" class="comment">
+					<h4>Fragments.</h4>
+					<div class="fragments"></div>
+					<h4>Profile.</h4>
+					<div class="text profile"><p></p><textarea class="scroll hide" placeholder="フラグメントになっていないものを含むあなたのプロフィール。身長などを書いておくといいかもしれません。"></textarea></div>
+					<h4>Memo.</h4>
+					<div class="text memo"><p></p><textarea class="scroll hide" placeholder="プレイヤー補足欄。連絡先や明日の献立などを書いておくといいかもしれません。この欄に限り、SNSアカウントがリンクに変換されます。"></textarea></div>
+				</div>
+			</div>
+			<div id="play_battle" class="back hide">
+				<p class="name left"></p>
+				<div class="range"><p class="acronym left"></p><p class="range"></p><p class="acronym right"></p></div>
+				<p class="name right"></p>
+				<div class="data left">
+					<div class="gauge"><p></p>HP:</div>
+					<div class="gauge"><p></p>MP:</div>
+					<div>ATK:</div>
+					<div>TEC:</div>
+				</div>
+				<div class="scroll"><div class="log"></div></div>
+				<div class="data right">
+					<div class="gauge"><p></p>HP:</div>
+					<div class="gauge"><p></p>MP:</div>
+					<div>ATK:</div>
+					<div>TEC:</div>
+				</div>
+			</div>
+		</div>
+		<div id="footer">
+			<p class="tab select" data-target="location,explore">Explore</p>
+			<p class="tab" data-target="location,chat">Chat</p>
+			<p class="tab" data-target="fragment">Fragment</p>
+			<p class="tab" data-target="battle">Battle</p>
+			<p class="tab" data-target="other">Other</p>
+		</div>
+	</body>
+</html>

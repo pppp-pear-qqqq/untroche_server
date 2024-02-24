@@ -1,0 +1,23 @@
+これはテストのシーンだよ
+「こんにちは！」<br><br><a onclick="next('hello')"> 挨拶を返す</a><br><a onclick="next('disregard')">無視する</a>
+!yield select
+!match select{
+	hello{
+		「いい挨拶だ」
+	}
+	disregard{
+		「挨拶も出来ないなんて！　これだから最近の若者は」<br><br><a onclick="next('hello')"> 改めて挨拶する </a><br><a onclick="next('disregard')">やっぱり無視する</a>
+		!yield select
+		!match select{
+			hello{
+				「いい挨拶だ」
+			}
+			disregard{
+				「ムキーーーー！！！！」
+			}
+		}
+	}
+}
+次はどこに行く？<br><br><a onclick="next('草原')">草原</a>　<a onclick="next('岩場')">岩場</a>　<a onclick="next('海辺')">海辺</a>
+!yield select
+!location select
