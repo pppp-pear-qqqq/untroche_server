@@ -31,51 +31,52 @@ fn sql_execute(conn: &Connection, sql: &str) -> bool {
 
 // サーバー起動時に実行する関数
 // pub fn create_db() -> Result<(), rusqlite::Error> {
-//     // let conn = Connection::open(common::DATABASE)?;
-//     // sql_execute(&conn, "DELETE FROM user");
-//     // sql_execute(&conn, "DELETE FROM character");
-//     // sql_execute(&conn, "DELETE FROM character_profile");
-//     // sql_execute(&conn, "DELETE FROM scene");
-//     // sql_execute(&conn, "DELETE FROM fragment");
-//     // sql_execute(&conn, "DELETE FROM login_session");
-//     // sql_execute(&conn, "DELETE FROM battle_reserve");
-//     // sql_execute(&conn, "DELETE FROM battle");
-//     // sql_execute(&conn, "DELETE FROM timeline");
-//     // sql_execute(&conn, "INSERT INTO fragment SELECT 1,id-25,category,name,lore,status,skill,NULL,NULL FROM base_fragment WHERE id>30 AND id<=55");
-//     // sql_execute(&conn, "INSERT INTO fragment SELECT 2,id-50,category,name,lore,status,skill,NULL,NULL FROM base_fragment WHERE id>55 AND id<=80");
-//     // let mut stmt = conn.prepare("SELECT f.id,f.category,f.name,f.lore,f.status,f.skill,s.name,s.lore,s.type,s.effect FROM base_fragment f LEFT OUTER JOIN skill s ON f.skill=s.id")?;
-//     // let result = stmt.query_map([], |row| {
-//     //     let skill: Option<i32> = row.get(5)?;
-//     //     if let Some(skill) = skill {
-//     //         Ok((
-//     //             row.get(0)?,
-//     //             row.get(1)?,
-//     //             row.get(2)?,
-//     //             row.get(3)?,
-//     //             row.get(4)?,
-//     //             Some(skill),
-//     //             Some(row.get(6)?),
-//     //             Some(row.get(7)?),
-//     //             Some(battle::Timing::from(row.get(8)?)),
-//     //             Some(battle::Command::convert(row.get(9)?).map_err(|_| rusqlite::Error::QueryReturnedNoRows)?),
-//     //         ))
-//     //     } else {
-//     //         Ok((
-//     //             row.get(0)?,
-//     //             row.get(1)?,
-//     //             row.get(2)?,
-//     //             row.get(3)?,
-//     //             row.get(4)?,
-//     //             None, None, None, None, None,
-//     //         ))
-//     //     }
-//     // })?.collect::<Result<Vec<(i32, String, String, String, [u8; 8], Option<i32>, Option<String>, Option<String>, _, _)>, _>>()?;
-//     // for r in result {
-//     //     println!("================\nid{} {} {} {:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}\n{}", r.0, r.1, r.2, r.4[0], r.4[1], r.4[2], r.4[3], r.4[4], r.4[5], r.4[6], r.4[7], r.3);
-//     //     if let Some(skill) = r.5 {
-//     //         println!("----------------\nid{} {} ({})\n{}", skill, r.6.unwrap(), r.8.unwrap().to_i8(), r.7.unwrap());
-//     //     }
-//     // }
+    // let conn = Connection::open(common::DATABASE)?;
+    // sql_execute(&conn, "DELETE FROM user");
+    // sql_execute(&conn, "DELETE FROM character");
+    // sql_execute(&conn, "DELETE FROM character_profile");
+    // sql_execute(&conn, "DELETE FROM scene");
+    // sql_execute(&conn, "DELETE FROM fragment");
+    // sql_execute(&conn, "DELETE FROM login_session");
+    // sql_execute(&conn, "DELETE FROM battle_reserve");
+    // sql_execute(&conn, "DELETE FROM battle");
+    // sql_execute(&conn, "DELETE FROM timeline");
+    // sql_execute(&conn, "INSERT INTO fragment SELECT 1,id-25,category,name,lore,status,skill,NULL,NULL FROM base_fragment WHERE id>30 AND id<=55");
+    // sql_execute(&conn, "INSERT INTO fragment SELECT 2,id-50,category,name,lore,status,skill,NULL,NULL FROM base_fragment WHERE id>55 AND id<=80");
+    // sql_execute(&conn, "INSERT INTO scene_list VALUES('海辺/何もない','海辺',1),('海辺/所持限界','海辺',1),('海辺/釣り','海辺',1),('海辺/宝探し','海辺',1),('森林/果樹','森林',1),('森林/花の香','森林',1),('森林/隙間から','森林',1),('森林/丸太小屋','森林',1),('草原/装備品2','草原',1),('岩場/尖塔を眺める','岩場',1),('花の広場','花の広場',1)");
+    // let mut stmt = conn.prepare("SELECT f.id,f.category,f.name,f.lore,f.status,f.skill,s.name,s.lore,s.type,s.effect FROM base_fragment f LEFT OUTER JOIN skill s ON f.skill=s.id")?;
+    // let result = stmt.query_map([], |row| {
+    //     let skill: Option<i32> = row.get(5)?;
+    //     if let Some(skill) = skill {
+    //         Ok((
+    //             row.get(0)?,
+    //             row.get(1)?,
+    //             row.get(2)?,
+    //             row.get(3)?,
+    //             row.get(4)?,
+    //             Some(skill),
+    //             Some(row.get(6)?),
+    //             Some(row.get(7)?),
+    //             Some(battle::Timing::from(row.get(8)?)),
+    //             Some(battle::Command::convert(row.get(9)?).map_err(|_| rusqlite::Error::QueryReturnedNoRows)?),
+    //         ))
+    //     } else {
+    //         Ok((
+    //             row.get(0)?,
+    //             row.get(1)?,
+    //             row.get(2)?,
+    //             row.get(3)?,
+    //             row.get(4)?,
+    //             None, None, None, None, None,
+    //         ))
+    //     }
+    // })?.collect::<Result<Vec<(i32, String, String, String, [u8; 8], Option<i32>, Option<String>, Option<String>, _, _)>, _>>()?;
+    // for r in result {
+    //     println!("================\nid{} {} {} {:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}\n{}", r.0, r.1, r.2, r.4[0], r.4[1], r.4[2], r.4[3], r.4[4], r.4[5], r.4[6], r.4[7], r.3);
+    //     if let Some(skill) = r.5 {
+    //         println!("----------------\nid{} {} ({})\n{}", skill, r.6.unwrap(), r.8.unwrap().to_i8(), r.7.unwrap());
+    //     }
+    // }
 //     Ok(())
 // }
 

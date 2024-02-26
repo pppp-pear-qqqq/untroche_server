@@ -41,6 +41,47 @@ function login() {
 	});
 }
 
+function random_name() {
+	let set;
+	let min;
+	let max;
+	switch (Math.floor(Math.random() * 3)) {
+		case 0: {
+			set = [...'あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわゐゑをがぎぐげござじずぜぞだぢづでどばびぶべぼぱぴぷぺぽんゔぁぃぅぇぉゃゅょっ'];
+			min = 2;
+			max = 6;
+		} break; 
+		case 1: {
+			set = [...'アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヰヱヲガギグゲゴザジズゼゾダヂヅデドバビブベボパピプペポンヴァィゥェォャュョッ'];
+			min = 2;
+			max = 6;
+		} break;
+		case 2: {
+			set = [...'abcdefghijklmnopqrstuvwxyz'];
+			min = 3;
+			max = 12;
+		} break;
+	}
+	let len = Math.floor(Math.random() * (max - min) + min);
+	let name = '';
+	for (let i = 0; i < len; ++i) {
+		name += set[Math.floor(Math.random() * set.length)];
+		if (i == 0)
+			name = name.toUpperCase();
+	}
+	document.getElementById('name').value = name;
+	document.getElementById('acronym').value = name.charAt(0);
+}
+
+function random_acronym() {
+	set = [...'あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわゐゑをがぎぐげござじずぜぞだぢづでどばびぶべぼぱぴぷぺぽんゔぁぃぅぇぉゃゅょっアイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヰヱヲガギグゲゴザジズゼゾダヂヅデドバビブベボパピプペポンヴァィゥェォャュョッABCDEFGHIJKLMNOPQRSTUVWXYZ'];
+	document.getElementById('acronym').value = set[Math.floor(Math.random() * set.length)];
+}
+
+function random_color() {;
+	document.getElementById('color').value = `#${Math.floor(Math.random() * 0x1000000).toString(16).padStart(6,'0')}`;
+}
+
 function random_fragment() {
 	const fragments = document.getElementById('fragments');
 	Array.prototype.forEach.call(fragments.getElementsByTagName('label'), elem => {

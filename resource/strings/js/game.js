@@ -341,6 +341,10 @@ function explore() {
 			// exploreの最初の行を取得
 			const log = document.querySelector('#explore .log');
 			let next = explore_text.shift();
+			if (next.includes('$input-nullable')) {
+				next = next.replaceAll('$input-nullable', '<input type="text" placeholder="16文字以下"><a onclick="next(this.previousElementSibling.value,this)">決定</a>');
+				explore_selectable = true;
+			}
 			if (next.includes('$input')) {
 				next = next.replaceAll('$input', '<input type="text" placeholder="16文字以下"><a onclick="next(this.previousElementSibling.value,this,true)">決定</a>');
 				explore_selectable = true;
@@ -373,7 +377,7 @@ function next(input,this_elem,strict) {
 	});
 	log.querySelectorAll('input').forEach(elem => {
 		const rep = document.createElement('span');
-		rep.innerHTML = elem.value;
+		rep.innerHTML = elem.value !== "" ? elem.value : "　　　　";
 		rep.classList.add('underline');
 		elem.nextElementSibling.remove();
 		elem.replaceWith(rep);
@@ -390,6 +394,7 @@ function next(input,this_elem,strict) {
 			explore_text.push(...ret.split('\n'));
 			explore_ok = true;
 			load_location();
+			load_fragments(document.querySelector('#fragment .container'), document.querySelector('#fragment .container.trash'));
 			explore();
 		}
 	})

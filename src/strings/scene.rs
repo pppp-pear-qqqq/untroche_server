@@ -57,10 +57,8 @@ pub async fn next(req: HttpRequest, info: web::Json<NextData>) -> Result<String,
             .map_err(|err| ErrorInternalServerError(err))?
     } else { HashMap::new() };
     // 渡されたデータを保存
-    if let Some(value) = &info.value {
-        if scene.data_key != "" {
-            data.insert(scene.data_key, value.to_string());
-        }
+    if scene.data_key != "" {
+        data.insert(scene.data_key, info.value.clone().unwrap_or(String::new()));
     }
     // 文字列を処理
     process_line(scene.buffer.as_str(), eno, &mut data)
@@ -158,12 +156,23 @@ pub fn process_line(scene: &str, eno: i16, data: &mut HashMap<String, String>) -
                     // データベース接続
                     let conn = common::open_database()?;
                     let fragment = if *key == "名前" {
-                        Fragment {
-                            category: "名前".to_string(),
-                            name: data.get(option.get(1).ok_or(script_error("変数が指定されていません"))?.to_owned()).ok_or(script_error("変数が保存されていません"))?.to_string(),
-                            lore: "あなたの名前。<br>決して無くさないよう、零さないよう。".to_string(),
-                            status: [0, 15, 0, 10, 0, 0, 0, 0],
-                            skill: None,
+                        let name = data.get(option.get(1).ok_or(script_error("変数が指定されていません"))?.to_owned()).ok_or(script_error("変数が保存されていません"))?.to_string();
+                        if name == "" {
+                            Fragment {
+                                category: "名前".to_string(),
+                                name: "名無し".to_string(),
+                                lore: "あなたは名乗らない。<br>それは自らの選択か、あるいは名乗る名が無いのか。".to_string(),
+                                status: [0, 15, 0, 6, 0, 1, 0, 1],
+                                skill: None,
+                            }
+                        } else {
+                            Fragment {
+                                category: "名前".to_string(),
+                                name,
+                                lore: "あなたの名前。<br>決して無くさないよう、零さないよう。".to_string(),
+                                status: [0, 15, 0, 10, 0, 0, 0, 0],
+                                skill: None,
+                            }
                         }
                     } else {
                         // idを取得
@@ -315,7 +324,8 @@ pub fn process_line(scene: &str, eno: i16, data: &mut HashMap<String, String>) -
                             match nest.find('{') {
                                 Some(tag_end_pos) => {
                                     let (content, content_end_pos) = get_nest(&nest[tag_end_pos..])?;
-                                    if nest[..tag_end_pos].trim() == check {
+                                    let part = nest[..tag_end_pos].trim();
+                                    if part == "_" || part == check {
                                         break content;
                                     } else {
                                         nest = &nest[tag_end_pos + content_end_pos..];

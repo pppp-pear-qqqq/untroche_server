@@ -29,11 +29,17 @@
 		flex-direction: column;
 		gap: 8px;
 		transition: opacity 1s;
+		p {
+			width: 30em;
+		}
 		>label {
 			display: flex;
 			justify-content: space-between;
 			>.submit {
 				margin-left: auto;
+			}
+			>p>button {
+				margin-left: 4px;
 			}
 		}
 		>div {
@@ -41,9 +47,6 @@
 			gap: 4px;
 			select {
 				width: 16em;
-			}
-			p {
-				width: 30em;
 			}
 		}
 	}

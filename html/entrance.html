@@ -36,10 +36,11 @@
 			<label><button type="button" class="submit" onclick="login()">ログイン</button></label>
 		</div>
 		<div id="register" class="hide">
+			<p>パスワード・初期フラグメント以外の項目は後で変更が可能です。</p>
 			<label>パスワード<input type="text" name="password" placeholder="16文字以下"></label>
-			<label>表示名<input type="text" name="name" placeholder="16文字以下"></label>
-			<label>短縮名<input type="text" name="acronym" placeholder="1文字"></label>
-			<label>イメージカラー<input type="color" name="color" value="#ffffff"></label>
+			<label>表示名<div><input type="text" id="name" name="name" placeholder="16文字以下"><button type="button" onclick="random_name()">ランダム</button></div></label>
+			<label>短縮名<div><input type="text" id="acronym" name="acronym" placeholder="1文字"><button type="button" onclick="random_acronym()">ランダム</button></div></label>
+			<label>イメージカラー<div><input type="color" id="color" name="color" value="#ffffff"><button type="button" onclick="random_color()">ランダム</button></div></label>
 			<h4>初期フラグメント</h4>
 			<div id="fragments"></div>
 			<label><button type="button" onclick="random_fragment()">ランダムなフラグメントを選択</button></label>
