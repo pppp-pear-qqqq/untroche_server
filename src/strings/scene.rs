@@ -19,13 +19,6 @@ struct Scene {
     data: String,
     data_key: String,
 }
-struct Fragment {
-    category: String,
-    name: String,
-    lore: String,
-    status: [u8; 8],
-    skill: Option<i32>,
-}
 
 #[derive(Deserialize)]
 pub struct NextData {
@@ -158,21 +151,21 @@ pub fn process_line(scene: &str, eno: i16, data: &mut HashMap<String, String>) -
                     let fragment = if *key == "名前" {
                         let name = data.get(option.get(1).ok_or(script_error("変数が指定されていません"))?.to_owned()).ok_or(script_error("変数が保存されていません"))?.to_string();
                         if name == "" {
-                            Fragment {
-                                category: "名前".to_string(),
-                                name: "名無し".to_string(),
-                                lore: "あなたは名乗らない。<br>それは自らの選択か、あるいは名乗る名が無いのか。".to_string(),
-                                status: [0, 15, 0, 6, 0, 1, 0, 1],
-                                skill: None,
-                            }
+                            common::Fragment::new(
+                                "名前".to_string(),
+                                "名無し".to_string(),
+                                "あなたは名乗らない。<br>それは自らの選択か、あるいは名乗る名が無いのか。".to_string(),
+                                [0, 15, 0, 6, 0, 1, 0, 1],
+                                None
+                            )
                         } else {
-                            Fragment {
-                                category: "名前".to_string(),
+                            common::Fragment::new(
+                                "名前".to_string(),
                                 name,
-                                lore: "あなたの名前。<br>決して無くさないよう、零さないよう。".to_string(),
-                                status: [0, 15, 0, 10, 0, 0, 0, 0],
-                                skill: None,
-                            }
+                                "あなたの名前。<br>決して無くさないよう、零さないよう。".to_string(),
+                                [0, 15, 0, 10, 0, 0, 0, 0],
+                                None
+                            )
                         }
                     } else {
                         // idを取得
@@ -209,54 +202,17 @@ pub fn process_line(scene: &str, eno: i16, data: &mut HashMap<String, String>) -
                         conn.query_row(
                             "SELECT category,name,lore,status,skill FROM base_fragment WHERE id=?1",
                             params![id],
-                            |row| Ok(Fragment{
-                                category: row.get(0)?,
-                                name: row.get(1)?,
-                                lore: row.get(2)?,
-                                status: row.get(3)?,
-                                skill: row.get(4)?
-                            }),
+                            |row| Ok(common::Fragment::new(
+                                row.get(0)?,
+                                row.get(1)?,
+                                row.get(2)?,
+                                row.get(3)?,
+                                row.get(4)?
+                            )),
                         ).map_err(|err| ErrorInternalServerError(err))?
                     };
-                    // キャラクターの空きスロットを確認
-                    let mut stmt = conn
-                        .prepare("SELECT slot FROM fragment WHERE eno=?1 ORDER BY slot ASC")
+                    let get = common::add_fragment(&conn, eno, &fragment)
                         .map_err(|err| ErrorInternalServerError(err))?;
-                    let result = stmt
-                        .query_map(params![eno], |row| Ok(row.get(0)?))
-                        .map_err(|err| ErrorInternalServerError(err))?
-                        .collect::<Result<Vec<i8>, rusqlite::Error>>()
-                        .map_err(|err| ErrorInternalServerError(err))?;
-                    let mut i = 1;
-                    for slot in result {
-                        if i == slot {
-                            i += 1;
-                        } else {
-                            break;
-                        }
-                    }
-                    let get = if i <= 30 {
-                        // 追加
-                        conn.execute(
-                            "INSERT INTO fragment(eno,slot,category,name,lore,status,skill) VALUES(?1,?2,?3,?4,?5,?6,?7)",
-                            params![
-                                eno,
-                                i,
-                                fragment.category,
-                                fragment.name,
-                                fragment.lore,
-                                fragment.status,
-                                fragment.skill
-                            ]
-                        ).map_err(|err| ErrorInternalServerError(err))?;
-                        true
-                    } else {
-                        // 所持数超過により破棄
-                        let value = common::calc_fragment_kins(fragment.status);
-                        conn.execute("UPDATE character SET kins=kins+?1 WHERE eno=?2", params![value, eno])
-                            .map_err(|err| ErrorInternalServerError(err))?;
-                        false
-                    };
                     // まだシーンが終了していなければ継続
                     if let Some(pos) = option_end_pos {
                         Ok(format!("\n──フラグメント『{}』を入手しました{}", fragment.name, if get {""} else {"<br>──所持数制限により破棄されました"}) + &process_line(&scene[pos..], eno, data)?)

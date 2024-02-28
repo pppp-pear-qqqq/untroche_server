@@ -67,11 +67,11 @@ async fn index(req: HttpRequest) -> Result<HttpResponse, actix_web::Error> {
             conn.execute("UPDATE login_session SET timestamp=CURRENT_TIMESTAMP WHERE id=?1", params![session.value()])
                 .map_err(|err| ErrorInternalServerError(err))?;
             // 各種情報取得
-            let (name, color, location, display): (String, [u8; 3], String, String) = conn
+            let (name, color, location, display, webhook): (String, [u8; 3], String, String, Option<String>) = conn
                 .query_row(
-                    "SELECT name,color,location,display FROM character c INNER JOIN scene s ON c.eno=?1 AND c.eno=s.eno",
+                    "SELECT name,color,location,display,webhook FROM character c INNER JOIN scene s ON c.eno=?1 AND c.eno=s.eno INNER JOIN user u ON c.eno=u.eno",
                     params![eno],
-                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?))
                 )
                 .map_err(|err| ErrorInternalServerError(err))?;
             let display: Vec<&str> = if display != "" { display.split("\r\n").collect() } else { Vec::new() };
@@ -84,7 +84,7 @@ async fn index(req: HttpRequest) -> Result<HttpResponse, actix_web::Error> {
                         liquid::ParserBuilder::with_stdlib()
                             .build()?
                             .parse(&fs::read_to_string("html/game.html").unwrap())?
-                            .render(&liquid::object!({"eno":eno, "name":name, "color":format!("#{:02x}{:02x}{:02x}", color[0], color[1], color[2]), "location":{"name":location, "lore":lore}, "display":display }))?
+                            .render(&liquid::object!({"eno":eno, "name":name, "color":format!("#{:02x}{:02x}{:02x}", color[0], color[1], color[2]), "location":{"name":location, "lore":lore}, "display":display, "webhook":webhook.unwrap_or(String::new()) }))?
                     )
                 )
             }().map_err(|err| ErrorInternalServerError(err));

@@ -1,5 +1,6 @@
 use std::{collections::hash_map::DefaultHasher, hash::{Hash, Hasher}, i128};
 
+use actix_rt;
 use actix_web::{error::{ErrorBadRequest, ErrorInternalServerError}, HttpRequest, web};
 use rusqlite::{named_params, params, types::Type};
 use serde::{Deserialize, Serialize};
@@ -117,7 +118,8 @@ pub(super) async fn send_chat(req: HttpRequest, info: web::Json<SendChatData>) -
             params![eno, info.to, if info.location { None } else { Some(location) }, color, info.name, word],
         ).map_err(|err| ErrorInternalServerError(err))?;
         if let Some(to) = &info.to {
-            actix_web::rt::spawn(common::send_webhook(*to, format!("Eno.{} {}からの発言を受けました。", to, info.name)));
+            println!("Webhook送信");
+            let _ = actix_rt::spawn(common::send_webhook(*to, format!("Eno.{} {}からの発言を受けました。", to, info.name))).await;
         }
         Ok("発言に成功しました".to_string())
     } else {
@@ -200,7 +202,7 @@ pub(super) async fn get_chat(req: HttpRequest, info: web::Query<GetChatData>) ->
     // 対象者
     if let Some(to) = &info.to {
         sql.push("to_eno=:to");
-        params.push((":to", to));
+        params.push((":to", if *to == 0 { &eno } else { to }));
     }
     // 検索文字列
     if let Some(word) = &info.word {
@@ -757,6 +759,37 @@ pub(super) async fn receive_battle(req: HttpRequest, info: web::Json<ReceiveBatt
                         log_json,
                     ]
                 ).map_err(|err| ErrorInternalServerError(err))?;
+                // フラグメント移動
+                if let Some((win, lose)) = match log.result.as_str() {
+                    "left" => Some((info.from, eno)),
+                    "right" => Some((eno, info.from)),
+                    _ => None,
+                } {
+                    let mut stmt = conn.prepare("SELECT slot,category,name,lore,status,skill FROM fragment WHERE eno=?1")
+                        .map_err(|err| ErrorInternalServerError(err))?;
+                    // 候補の取得
+                    let result = stmt.query_map(params![lose], |row| {
+                        Ok(UpdateFragment{
+                            slot: row.get(0)?,
+                            category: row.get(1)?,
+                            name: row.get(2)?,
+                            lore: row.get(3)?,
+                            status: row.get(4)?,
+                            skill: row.get(5)?,
+                        })
+                    }).map_err(|err| ErrorInternalServerError(err))?
+                        .collect::<Result<Vec<_>, _>>()
+                        .map_err(|err| ErrorInternalServerError(err))?;
+                    // 移動対象を決定
+                    let t = result.get(rand::random::<usize>() % result.len())
+                        .ok_or(ErrorInternalServerError("フラグメントの移動に失敗しました"))?;
+                    // 勝利者にフラグメントを追加
+                    common::add_fragment(&conn, win, &common::Fragment::new(t.category.to_owned(), t.name.to_owned(), t.lore.to_owned(), t.status, t.skill))
+                        .map_err(|err| ErrorInternalServerError(err))?;
+                    // フラグメントの削除
+                    conn.execute("DELETE FROM fragment WHERE eno=?1 AND slot=?2", params![lose, t.slot])
+                        .map_err(|err| ErrorInternalServerError(err))?;
+                }
                 // 攻撃者に連絡
                 actix_web::rt::spawn(common::send_webhook(info.from, format!("Eno.{} との戦闘が開始しました。", eno)));
                 // 戦闘ログを返す

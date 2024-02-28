@@ -3,7 +3,20 @@ use std::fs;
 use actix_web::error::{ErrorBadRequest, ErrorInternalServerError};
 use awc::Client;
 use fancy_regex::Regex;
-use rusqlite::Connection;
+use rusqlite::{params, Connection};
+
+pub(super) struct Fragment {
+    category: String,
+    pub name: String,
+    lore: String,
+    status: [u8; 8],
+    skill: Option<i32>,
+}
+impl Fragment {
+    pub fn new(category: String, name: String, lore: String, status: [u8; 8], skill: Option<i32>) -> Fragment {
+        Fragment { category, name, lore, status, skill }
+    }
+}
 
 // ================================
 // アプリケーション共通処理
@@ -42,7 +55,47 @@ pub async fn send_webhook(eno: i16, content: String) -> Result<(), String> {
             .map_err(|err| err.to_string())?;
     }
     // ウェブフックが登録されてなくて送信できなかったパターンは成功として扱う
+    println!("Webhook送信完了");
     Ok(())
+}
+
+// 空きスロットを検索してフラグメントを追加
+pub fn add_fragment(conn: &Connection, eno: i16, fragment: &Fragment) -> Result<bool, rusqlite::Error> {
+    // キャラクターの空きスロットを確認
+    let mut stmt = conn
+        .prepare("SELECT slot FROM fragment WHERE eno=?1 ORDER BY slot ASC")?;
+    let result = stmt
+        .query_map(params![eno], |row| Ok(row.get(0)?))?
+        .collect::<Result<Vec<i8>, rusqlite::Error>>()?;
+    let mut i = 1;
+    for slot in result {
+        if i == slot {
+            i += 1;
+        } else {
+            break;
+        }
+    }
+    Ok(if i <= 30 {
+        // 追加
+        conn.execute(
+            "INSERT INTO fragment(eno,slot,category,name,lore,status,skill) VALUES(?1,?2,?3,?4,?5,?6,?7)",
+            params![
+                eno,
+                i,
+                fragment.category,
+                fragment.name,
+                fragment.lore,
+                fragment.status,
+                fragment.skill
+            ]
+        )?;
+        true
+    } else {
+        // 所持数超過により破棄
+        let value = calc_fragment_kins(fragment.status);
+        conn.execute("UPDATE character SET kins=kins+?1 WHERE eno=?2", params![value, eno])?;
+        false
+    })
 }
 
 pub fn html_special_chars(text: String) -> String {
