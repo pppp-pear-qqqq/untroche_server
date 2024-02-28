@@ -20,6 +20,10 @@ async fn main() -> Result<(), std::io::Error> {
     server.await
 }
 
+// fn main() {
+//     strings::test();
+// }
+
 async fn index() -> Result<HttpResponse, actix_web::Error> {
     Ok(HttpResponse::Ok().body(
         fs::read_to_string("html/untroche.html")

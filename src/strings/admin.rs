@@ -30,7 +30,8 @@ fn sql_execute(conn: &Connection, sql: &str) -> bool {
 }
 
 // サーバー起動時に実行する関数
-// pub fn create_db() -> Result<(), rusqlite::Error> {
+#[allow(dead_code)]
+pub fn preset() -> Result<(), rusqlite::Error> {
     // let conn = Connection::open(common::DATABASE)?;
     // sql_execute(&conn, "DELETE FROM user");
     // sql_execute(&conn, "DELETE FROM character");
@@ -77,8 +78,8 @@ fn sql_execute(conn: &Connection, sql: &str) -> bool {
     //         println!("----------------\nid{} {} ({})\n{}", skill, r.6.unwrap(), r.8.unwrap().to_i8(), r.7.unwrap());
     //     }
     // }
-//     Ok(())
-// }
+    Ok(())
+}
 
 fn create_skill(
     conn: &Connection,

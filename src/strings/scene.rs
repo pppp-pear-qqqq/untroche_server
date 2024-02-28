@@ -181,16 +181,25 @@ pub fn process_line(scene: &str, eno: i16, data: &mut HashMap<String, String>) -
                             Ok(id) => id,
                             // カテゴリの形式で指定
                             Err(_) => {
-                                let mut stmt = if *key == "all" {
-                                    conn.prepare("SELECT id FROM base_fragment")
+                                let result = if *key == "all" {
+                                    let mut stmt = conn.prepare("SELECT id FROM base_fragment")
+                                        .map_err(|err| ErrorInternalServerError(err))?;
+                                    let x = stmt
+                                        .query_map([], |row| Ok(row.get(0)?))
+                                        .map_err(|err| ErrorInternalServerError(err))?
+                                        .collect::<Result<Vec<i32>, rusqlite::Error>>()
+                                        .map_err(|err| ErrorInternalServerError(err))?;
+                                    x
                                 } else {
-                                    conn.prepare("SELECT id FROM base_fragment WHERE category=?1")
-                                }.map_err(|err| ErrorInternalServerError(err))?;
-                                let result = stmt
-                                    .query_map(params![key], |row| Ok(row.get(0)?))
-                                    .map_err(|err| ErrorInternalServerError(err))?
-                                    .collect::<Result<Vec<i32>, rusqlite::Error>>()
-                                    .map_err(|err| ErrorInternalServerError(err))?;
+                                    let mut stmt = conn.prepare("SELECT id FROM base_fragment WHERE category=?1")
+                                        .map_err(|err| ErrorInternalServerError(err))?;
+                                    let x = stmt
+                                        .query_map(params![key], |row| Ok(row.get(0)?))
+                                        .map_err(|err| ErrorInternalServerError(err))?
+                                        .collect::<Result<Vec<i32>, rusqlite::Error>>()
+                                        .map_err(|err| ErrorInternalServerError(err))?;
+                                    x
+                                };
                                 let mut rng = thread_rng();
                                 *result.choose(&mut rng)
                                     .ok_or(script_error("指定されたカテゴリのフラグメントは存在しません"))?
@@ -306,15 +315,15 @@ pub fn process_line(scene: &str, eno: i16, data: &mut HashMap<String, String>) -
                             match nest.find('{') {
                                 Some(tag_end_pos) => {
                                     let (content, content_end_pos) = get_nest(&nest[tag_end_pos..])?;
-                                    if nest[..tag_end_pos].trim().parse::<u8>().map_err(|_| script_error("確率分岐のキーが数値ではありません"))? >= check {
+                                    let part = nest[..tag_end_pos].trim().parse::<u8>().map_err(|_| script_error("確率分岐のキーが数値ではありません"))?;
+                                    if part >= check {
                                         break content;
-                                    } else {
-                                        nest = &nest[tag_end_pos + content_end_pos..];
                                     }
+                                    nest = &nest[tag_end_pos + content_end_pos..];
                                 }
                                 None => break "",
                             }
-                        }.to_string()
+                        }
                     } else {
                         let check = match data.get(key) {
                             Some(value) => value.as_str(),
@@ -327,14 +336,13 @@ pub fn process_line(scene: &str, eno: i16, data: &mut HashMap<String, String>) -
                                     let part = nest[..tag_end_pos].trim();
                                     if part == "_" || part == check {
                                         break content;
-                                    } else {
-                                        nest = &nest[tag_end_pos + content_end_pos..];
                                     }
+                                    nest = &nest[tag_end_pos + content_end_pos..];
                                 }
                                 None => break "",
                             }
-                        }.to_string()
-                    };
+                        }
+                    }.to_string();
                     content += &scene[nest_start_pos + nest_end_pos..];
                     Ok(process_line(&content, eno, data)?.to_string())
                 }

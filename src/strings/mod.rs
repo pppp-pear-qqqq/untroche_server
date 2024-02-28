@@ -112,3 +112,17 @@ async fn index(req: HttpRequest) -> Result<HttpResponse, actix_web::Error> {
         )
     }().map_err(|err| ErrorInternalServerError(err))
 }
+
+#[allow(dead_code)]
+pub fn test() {
+    // let _ = admin::preset();
+    let mut data = std::collections::HashMap::from([("select".to_string(), "throw".to_string())]);
+    match scene::process_line(fs::read_to_string("game/scene/test").unwrap().as_str(), 1, &mut data) {
+        Ok(ok) => {
+            println!("{}", ok);
+        }
+        Err(err) => {
+            println!("{}", err);
+        }
+    }
+}
