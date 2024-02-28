@@ -648,8 +648,14 @@ function receive_battle(from, plan) {
 			if (ret['result'] === 'omission') {
 				alertify.success(ret['content']);
 			} else {
-				battle = new Battle(ret);
+				battle = new Battle(ret[0]);
+				if (ret[0]['result'] === 'right') {
+					alertify.success(`フラグメント『${ret[1]}』を獲得しました`);
+				} else if (ret[0]['result'] === 'left') {
+					alertify.message(`フラグメント『${ret[1]}』を喪失しました`);
+				}
 				load_battle_logs(document.querySelector('#battle>.log'), eno);
+				load_fragments(document.querySelector('#fragment .container'), document.querySelector('#fragment .container.trash'));
 			}
 		}
 	})

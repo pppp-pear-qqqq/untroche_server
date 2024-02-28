@@ -103,7 +103,10 @@ pub(super) async fn send_chat(req: HttpRequest, info: web::Json<SendChatData>) -
     let mut word = common::html_special_chars(info.word.clone());
     // 入力情報が正しい長さであることを確認
     if info.name.graphemes(true).count() <= 20 && word.graphemes(true).count() <= 600 {
-		// データベースに接続
+        let handle = if let Some(to) = &info.to {
+            Some(actix_rt::spawn(common::send_webhook(*to, format!("Eno.{} {}からの発言を受けました。", to, info.name))))
+        } else { None };
+        // データベースに接続
 		let conn = common::open_database()?;
         // ログインセッションをデータベースと照会
         let eno = common::session_to_eno(&conn, session.value())?;
@@ -117,9 +120,8 @@ pub(super) async fn send_chat(req: HttpRequest, info: web::Json<SendChatData>) -
             "INSERT INTO timeline(from_eno,to_eno,location,color,name,word) VALUES(?1,?2,?3,?4,?5,?6)",
             params![eno, info.to, if info.location { None } else { Some(location) }, color, info.name, word],
         ).map_err(|err| ErrorInternalServerError(err))?;
-        if let Some(to) = &info.to {
-            println!("Webhook送信");
-            let _ = actix_rt::spawn(common::send_webhook(*to, format!("Eno.{} {}からの発言を受けました。", to, info.name))).await;
+        if let Some(h) = handle {
+            let _ = h.await;
         }
         Ok("発言に成功しました".to_string())
     } else {
@@ -696,6 +698,8 @@ pub(super) async fn send_battle(req: HttpRequest, info: web::Json<SendBattleData
     if eno == info.to {
         return Err(ErrorBadRequest("自分とは戦闘できません"));
     }
+    // 通知を送信
+    let handle = actix_rt::spawn(common::send_webhook(info.to, format!("Eno.{} に戦闘を挑まれました。", eno)));
     // 対象の名前を取得
     let target_name: String = conn
     .query_row("SELECT name FROM character WHERE eno=?1", params![info.to], |row| Ok(row.get(0)?))
@@ -715,8 +719,7 @@ pub(super) async fn send_battle(req: HttpRequest, info: web::Json<SendBattleData
         },
         _ => ErrorInternalServerError(err),
     })?;
-    // 通知を送信
-    actix_web::rt::spawn(common::send_webhook(info.to, format!("Eno.{} に戦闘を挑まれました。", eno)));
+    let _ = handle.await;
     Ok(target_name)
 }
 
@@ -746,6 +749,8 @@ pub(super) async fn receive_battle(req: HttpRequest, info: web::Json<ReceiveBatt
     match &info.plan {
         0 | 1 => {
             if plan == info.plan {
+                // 攻撃者に連絡
+                let handle = actix_rt::spawn(common::send_webhook(info.from, format!("Eno.{} との戦闘が開始しました。", eno)));
                 // 戦闘処理
                 let log = battle::battle(info.from, eno).map_err(|err| ErrorInternalServerError(err))?;
                 let log_json = serde_json::to_string(&log).map_err(|err| ErrorInternalServerError(err))?;
@@ -760,7 +765,7 @@ pub(super) async fn receive_battle(req: HttpRequest, info: web::Json<ReceiveBatt
                     ]
                 ).map_err(|err| ErrorInternalServerError(err))?;
                 // フラグメント移動
-                if let Some((win, lose)) = match log.result.as_str() {
+                let name = if let Some((win, lose)) = match log.result.as_str() {
                     "left" => Some((info.from, eno)),
                     "right" => Some((eno, info.from)),
                     _ => None,
@@ -789,24 +794,26 @@ pub(super) async fn receive_battle(req: HttpRequest, info: web::Json<ReceiveBatt
                     // フラグメントの削除
                     conn.execute("DELETE FROM fragment WHERE eno=?1 AND slot=?2", params![lose, t.slot])
                         .map_err(|err| ErrorInternalServerError(err))?;
-                }
-                // 攻撃者に連絡
-                actix_web::rt::spawn(common::send_webhook(info.from, format!("Eno.{} との戦闘が開始しました。", eno)));
+                    t.name.clone()
+                } else { String::new() };
+                let _ = handle.await;
                 // 戦闘ログを返す
-                Ok(log_json)
+                Ok(format!("[{},{{\"name\":\"{}\"}}]", log_json, name))
             } else {
                 // 戦闘処理を省略して勝敗決定
                 // 攻撃者に連絡
-                actix_web::rt::spawn(common::send_webhook(info.from, format!("Eno.{} との戦闘が省略され、{}しました。", eno, if plan != 0 { "勝利" } else { "敗北" })));
+                let handle = actix_rt::spawn(common::send_webhook(info.from, format!("Eno.{} との戦闘が省略され、{}しました。", eno, if plan != 0 { "勝利" } else { "敗北" })));
+                let _ = handle.await;
                 // 被攻撃者に連絡
                 Ok(format!("{{\"result\":\"omission\",\"content\":\"Eno.{} との戦闘が省略され、{}しました\"}}", info.from, if info.plan != 0 { "勝利" } else { "敗北" }))
             }
         }
         _ => {
+            // 攻撃者に連絡
+            let handle = actix_rt::spawn(common::send_webhook(info.from, format!("戦闘を挑んでいた Eno.{} に逃走されました。", eno)));
             conn.execute("DELETE FROM battle_reserve WHERE from_eno=?1 AND to_eno=?2", params![info.from, eno])
                 .map_err(|err| ErrorInternalServerError(err))?;
-            // 攻撃者に連絡
-            actix_web::rt::spawn(common::send_webhook(info.from, format!("戦闘を挑んでいた Eno.{} に逃走されました。", eno)));
+            let _ = handle.await;
             // 被攻撃者に連絡
             Ok(format!("{{\"result\":\"omission\",\"content\":\"Eno.{} との戦闘から逃走しました\"}}", info.from))
         }
@@ -905,11 +912,12 @@ pub(super) async fn cancel_battle(req: HttpRequest, info: web::Json<CancelBattle
     let conn = common::open_database()?;
     // Enoを取得
     let eno = common::session_to_eno(&conn, session.value())?;
+    // 通知
+    let handle = actix_rt::spawn(common::send_webhook(info.to, format!("Eno.{} に挑まれていた戦闘が取り下げられました。", eno)));
     // 取得・整形
     conn.execute("DELETE FROM battle_reserve WHERE from_eno=?1 AND to_eno=?2", params![eno, info.to])
         .map_err(|err| ErrorBadRequest(err))?;
-    // 通知
-    actix_web::rt::spawn(common::send_webhook(info.to, format!("Eno.{} に挑まれていた戦闘が取り下げられました。", eno)));
+    let _ = handle.await;
     // 終了
     Ok("戦闘をキャンセルしました".to_string())
 }
