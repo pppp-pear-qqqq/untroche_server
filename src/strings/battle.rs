@@ -211,7 +211,7 @@ enum SkillResult {
     Fail,
 }
 
-#[derive(PartialEq,Clone)]
+#[derive(Clone)]
 #[allow(dead_code)]
 pub enum Timing {
     Active,
@@ -232,16 +232,16 @@ impl Timing {
             _ => Self::None,
         }
     }
-    // pub fn to_i8(&self) -> i8 {
-    //     match self {
-    //         Self::Active => 0,
-    //         Self::Reactive => 1,
-    //         Self::Start => 2,
-    //         Self::Win => 3,
-    //         Self::Lose => 4,
-    //         Self::None => 5,
-    //     }
-    // }
+    pub fn to_i8(&self) -> i8 {
+        match self {
+            Self::Active => 0,
+            Self::Reactive => 1,
+            Self::Start => 2,
+            Self::Win => 3,
+            Self::Lose => 4,
+            Self::None => 5,
+        }
+    }
 }
 impl Serialize for Timing {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -437,13 +437,14 @@ impl Battle {
         static ERR: &str = "式がおかしいよ";
         let mut is_complete = false; // スキルが全て完了したかのフラグ
         let mut is_attacked = false;
-        let once_skill = timing == Timing::Win || timing == Timing::Lose;
+        let timing = timing.to_i8();
+        let once_skill = (timing == Timing::Win.to_i8()) || (timing == Timing::Lose.to_i8());
         let mut action = Vec::new();
         let mut skill_id: Option<usize> = None;
         // スキルを先頭から検索
         for i in 0..self.character[user].skill.len() {
             // タイミングが同一
-            if self.character[user].skill[i].0.timing == timing {
+            if self.character[user].skill[i].0.timing.to_i8() == timing {
                 // 勝利・敗北時にはそのスキルが一度も発動していないのを確認
                 if once_skill && self.character[user].skill[i].1 {
                     continue;
@@ -609,6 +610,10 @@ impl Battle {
         let mut action_text = String::new();
         for a in action {
             match a.0 {
+                Command::Cost |
+                Command::Range |
+                Command::ForceCost |
+                Command::Random |
                 Command::Attack |
                 Command::ForceAttack |
                 Command::MindAttack |

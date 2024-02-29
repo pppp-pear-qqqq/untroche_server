@@ -113,7 +113,7 @@ function load_timeline(container, num, start, from, to, location, word) {
 				}
 				const location = e.querySelector('.location');
 				if (i['location'] === null)
-					location.innerHTML = '<img src="pic/lock_fill.svg" width="21" height="21">';
+					location.innerHTML = '<img src="strings/pic/lock_fill.svg" width="21" height="21">';
 				else
 					location.innerText = i['location'];
 				e.querySelector('.name').innerText = i['name'];
@@ -664,9 +664,9 @@ function receive_battle(from, plan) {
 			} else {
 				battle = new Battle(ret[0]);
 				if (ret[0]['result'] === 'right') {
-					alertify.success(`フラグメント『${ret[1]}』を獲得しました`);
+					alertify.success(`フラグメント『${ret[1]['name']}』を獲得しました`);
 				} else if (ret[0]['result'] === 'left') {
-					alertify.message(`フラグメント『${ret[1]}』を喪失しました`);
+					alertify.warning(`フラグメント『${ret[1]['name']}』を喪失しました`);
 				}
 				load_battle_logs(document.querySelector('#battle>.log'), eno);
 				load_fragments(document.querySelector('#fragment .container'), document.querySelector('#fragment .container.trash'));
@@ -683,6 +683,17 @@ function cancel_battle(to) {
 			alertify.success(ret);
 		}
 	})
+}
+function auto_battle() {
+	if (battle.auto !== null) {
+		clearInterval(battle.auto);
+		battle.auto = null;
+	} else {
+		battle.auto = setInterval(battle.next, 1500, battle);
+	}
+}
+function close_battle() {
+	battle.close();
 }
 
 window.addEventListener('load', async () => {

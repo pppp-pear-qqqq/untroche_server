@@ -31,6 +31,7 @@ class Battle {
 	constructor(raw) {
 		this.rule = raw['rule'];
 		this.version = raw['version'];
+		this.auto = null;
 		if (this.rule === "strings") {
 			if(this.version < 1) {
 				// 要素取得
@@ -60,6 +61,14 @@ class Battle {
 		this.character[0].update();
 		this.character[1].update();
 	}
+	async close() {
+		this.display.classList.add('hide');
+		this.elem_log.replaceChildren();
+		if (this.auto !== null) {
+			clearInterval(battle.auto);
+			this.auto = null;
+		}
+	}
 	/**
 	 * @param {Battle} battle 
 	 */
@@ -70,8 +79,7 @@ class Battle {
 				const turn = battle.log[battle.now++];
 				// ターンが終了していれば（ログが無ければ）終了
 				if (turn === undefined) {
-					battle.display.classList.add('hide');
-					battle.elem_log.replaceChildren();
+					battle.close();
 					return true;
 				};
 				// ログ作成
@@ -137,7 +145,7 @@ class Battle {
 								battle.character[actor].status.mp -= value;
 								const mp = battle.character[actor].status.mp;
 								if (mp < 0) {
-									battle.character[actor].status.hp -= mp;
+									battle.character[actor].status.hp += mp;
 									body += ` 不足分をHPで補い<span class="minus">${-mp}</span>のダメージ`
 								}
 							} break;
