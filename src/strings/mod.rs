@@ -40,9 +40,9 @@ pub fn config(cfg: &mut web::ServiceConfig) {
 		.route("/get_battle_logs", web::get().to(func::get_battle_logs))
 		.route("/get_battle_reserve", web::get().to(func::get_battle_reserve))
 		.route("/next", web::post().to(scene::next))
-		.route("/admin_{password}", web::get().to(admin::index))
-		.route("/admin_{password}/make_skill", web::post().to(admin::make_fragment))
-		.route("/admin_{password}/make_fragment", web::post().to(admin::make_skill))
+		.route("/admin", web::get().to(admin::index))
+		.route("/admin/update_skill", web::post().to(admin::update_skill))
+		.route("/admin/update_fragment", web::post().to(admin::update_fragment))
         .service(Files::new("/", "resource/strings").show_files_listing())
     );
 }

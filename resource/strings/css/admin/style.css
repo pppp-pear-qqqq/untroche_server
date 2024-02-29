@@ -1,0 +1,53 @@
+div {
+	flex-direction: column;
+}
+div.grid {
+	display: grid;
+	grid-template-columns: repeat(3, max-content);
+	gap: 6px;
+}
+div.fragment {
+	padding: 8px;
+	border: 1px dashed #767676;
+	display: grid;
+	grid-template-columns: repeat(4, 1fr);
+	gap: 3px;
+	>input[name="category"] {
+		width: 4em;
+	}
+	>input[name="name"] {
+		grid-column: 2 / -1;
+		width: 16em;
+	}
+	input.val {
+		width: 4em;
+	}
+	>textarea {
+		grid-column: 1 / -1;
+		width: 30em;
+		height: 4lh;
+		resize: none;
+	}
+	label.skill {
+		grid-column: 1 / -2;
+		>input {
+			width: 3em;
+		}
+	}
+	>button {
+		grid-column-end: -1;
+	}
+}
+div.skill {
+	padding: 8px;
+	border: 1px dashed #767676;
+	gap: 3px;
+	>textarea {
+		width: 30em;
+		height: 4lh;
+		resize: none;
+	}
+	input[name="effect"] {
+		width: 100%;
+	}
+}

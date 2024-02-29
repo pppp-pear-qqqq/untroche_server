@@ -51,3 +51,50 @@
 		}
 	}
 }
+#blank {
+	margin-bottom: calc(50vh - 2lh);
+}
+.desc {
+	width: fit-content;
+	margin: 20px 0 20px 4em;
+	flex-direction: column;
+	>h2, >div {
+		border: 1px #767676;
+		border-style: none none solid solid;
+	}
+	>h2 {
+		padding: 0 12px;
+		font-size: 120%;
+		font-weight: normal;
+	}
+	>div {
+		margin-bottom: 20px;
+		padding: 12px;
+		display: block;
+		div, dl {
+			margin: 12px 0;
+			padding: 12px;
+			border-radius: 8px;
+			border: 1px solid #767676;
+			background-color: #202020f0;
+		}
+		cite {
+			text-align: end;
+		}
+		div {
+			flex-direction: column;
+		}
+		dl {
+			>dd {
+				border-bottom: 1px solid #767676;
+				font-size: 16px;
+			}
+			>dt {
+				margin-left: 2em;
+			}
+			>dt+dd {
+				margin-top: 12px;
+			}
+		}
+	}
+}

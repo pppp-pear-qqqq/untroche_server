@@ -7,6 +7,7 @@
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 	<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;800&display=swap">
 	<link rel="stylesheet" type="text/css" href="css/style.css">
+	<link rel="stylesheet" type="text/css" href="css/admin/style.css">
 	<link rel="stylesheet" type="text/css" href="api/css/alertify.min.css">
 	<script src="api/alertify.min.js"></script>
 	<script src="js/cookie.class.js"></script>
@@ -16,10 +17,104 @@
 </head>
 <body>
 	<h2>"Strings".admin</h2>
-	<form>
-		<textarea id="input" name="input"></textarea>
-		<button type="button" onclick="make_skill()">スキル作成</button>
-		<button type="button" onclick="make_fragment()">フラグメント作成</button>
-	</form>
-	<div id="output"></div>
+	<div>
+		<h3>コンソール</h3>
+		<form>
+			<textarea id="input" name="input"></textarea>
+			<button type="button" onclick="sql()">SQL実行</button>
+		</form>
+		<div id="output"></div>
+	</div>
+	<div>
+		<h3>ベースフラグメント</h3>
+		<div class="grid">
+			{% for f in fragment %}
+			<div class="fragment" data-id="{{f.id}}">
+				<input type="text" name="category" placeholder="カテゴリ" value="{{f.category}}">
+				<input type="text" name="name" placeholder="フラグメント名" value="{{f.name}}">
+				<textarea name="lore" placeholder="説明文">{{f.lore}}</textarea>
+				<label>HP<input type="number" name="hp" class="val" value="{{f.hp}}"></label>
+				<label>MP<input type="number" name="mp" class="val" value="{{f.mp}}"></label>
+				<label>ATK<input type="number" name="atk" class="val" value="{{f.atk}}"></label>
+				<label>TEC<input type="number" name="tec" class="val" value="{{f.tec}}"></label>
+				<label class="skill">スキル<input name="skill" type="number" value="{{f.skill}}"></label>
+				<button type="button" onclick="update_fragment(this.parentNode)">更新</button>
+			</div>
+			{% endfor %}
+		</div>
+		<div class="fragment form">
+			<input type="text" name="category" placeholder="カテゴリ">
+			<input type="text" name="name" placeholder="フラグメント名">
+			<textarea name="lore" placeholder="説明文"></textarea>
+			<label>HP<input type="number" name="hp" class="val"></label>
+			<label>MP<input type="number" name="mp" class="val"></label>
+			<label>ATK<input type="number" name="atk" class="val"></label>
+			<label>TEC<input type="number" name="tec" class="val"></label>
+			<label class="skill">スキル<input name="skill" type="text"></label>
+			<button type="button" onclick="update_fragment(this.parentNode, true)">追加</button>
+		</div>
+	</div>
+	<div>
+		<h3>スキル</h3>
+		<details>
+			<summary>スキル式コマンド一覧</summary>
+			HP<br>
+			MP<br>
+			ATK<br>
+			TEC<br>
+			自身HP<br>
+			自身MP<br>
+			自身ATK<br>
+			自身TEC<br>
+			相手HP<br>
+			相手MP<br>
+			相手ATK<br>
+			相手TEC<br>
+			間合値<br>
+			逃走値<br>
+			正<br>
+			負<br>
+			+<br>
+			-<br>
+			*<br>
+			/<br>
+			%<br>
+			~<br>
+			消耗<br>
+			強命消耗<br>
+			間合<br>
+			確率<br>
+			中断<br>
+			攻撃<br>
+			貫通攻撃<br>
+			精神攻撃<br>
+			回復<br>
+			自傷<br>
+			集中<br>
+			ATK強化<br>
+			TEC強化<br>
+			移動<br>
+			間合変更<br>
+			逃走ライン<br>
+			対象変更<br>
+		</details>
+		<div class="grid">
+			{% for s in skill %}
+			<div class="skill" data-id="{{s.id}}">
+				<input type="text" name="name" placeholder="スキル名" value="{{s.name}}">
+				<textarea name="lore" placeholder="説明文">{{s.lore}}</textarea>
+				<label>発動条件<select name="timing" data-timing="{{s.timing}}"><option value="0">通常</option><option value="1">反応</option><option value="2">開始</option><option value="3">勝利</option><option value="4">敗北</option><option value="5">無感</option></select></label>
+				<input name="effect" type="text" value="{{s.effect}}">
+				<button type="button" onclick="update_skill(this.parentNode)">更新</button>
+			</div>
+			{% endfor %}
+		</div>
+		<div class="skill form">
+			<input type="text" name="name" placeholder="スキル名">
+			<textarea name="lore" placeholder="説明文"></textarea>
+			<label>発動条件<select name="timing"><option value="0">通常</option><option value="1">反応</option><option value="2">開始</option><option value="3">勝利</option><option value="4">敗北</option><option value="5">無感</option></select></label>
+			<input name="effect" type="text">
+			<button type="button" onclick="update_skill(this.parentNode, true)">追加</button>
+		</div>
+	</div>
 </body>

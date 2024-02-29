@@ -1,16 +1,24 @@
-use actix_web::{web, HttpResponse, error::{ErrorBadRequest, ErrorForbidden, ErrorInternalServerError}};
+use std::fs;
+
+use actix_web::{error::{ErrorForbidden, ErrorInternalServerError}, web, HttpRequest, HttpResponse};
+use awc::cookie::Cookie;
+use fancy_regex::Regex;
 use rusqlite::{params, Connection};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use super::{
-    battle::{self, Timing},
+    battle,
     common,
 };
 
 // データベースに保存されているパスワードを取得
-fn check_server_password(conn: &Connection, password: String) -> Result<bool, rusqlite::Error> {
-    Ok(password == conn.query_row("SELECT password FROM server", [], |row| {
+fn check_server_password(conn: &Connection, password: &str) -> Result<(), actix_web::Error> {
+    if password == conn.query_row("SELECT password FROM server", [], |row| {
         row.get::<usize, String>(0)
-    })?)
+    }).map_err(|err| ErrorInternalServerError(err))? {
+        Ok(())
+    } else {
+        Err(ErrorForbidden("パスワードが違います"))
+    }
 }
 
 // めちゃめちゃ雑にsql文を実行する
@@ -81,167 +89,213 @@ pub fn preset() -> Result<(), rusqlite::Error> {
     Ok(())
 }
 
-fn create_skill(
-    conn: &Connection,
-    name: &str,
-    lore: &str,
-    timing: battle::Timing,
-    commands: Vec<battle::Command>,
-) -> Result<i64, rusqlite::Error> {
-    let mut buf = Vec::<u8>::new();
-    for command in commands {
-        let v = command.to_i16();
-        buf.push((v >> 8) as u8);
-        buf.push(v as u8);
-    }
-    conn.execute(
-        "INSERT INTO skill(name,lore,type,effect) VALUES(?1,?2,?3,?4)",
-        params![name, lore, timing.to_i8(), buf],
-    )?;
-    Ok(conn.last_insert_rowid())
+#[derive(Serialize)]
+struct Fragment {
+    id: i32,
+    category: String,
+    name: String,
+    lore: String,
+    hp: i16,
+    mp: i16,
+    atk: i16,
+    tec: i16,
+    skill: Option<i32>,
 }
-
+#[derive(Serialize)]
+struct Skill {
+    id: i32,
+    name: String,
+    lore: String,
+    timing: i8,
+    effect: String,
+}
+#[derive(Deserialize)]
+pub(super) struct Password {
+    pass: String,
+}
 // 管理者用ページ
-pub async fn index(path: web::Path<String>) -> Result<HttpResponse, actix_web::Error> {
+pub async fn index(pass: web::Query<Password>) -> Result<HttpResponse, actix_web::Error> {
 	// データベースに接続
 	let conn = common::open_database()?;
     // URLに含まれるパスワード部分を取得して確認
-    if check_server_password(&conn, path.into_inner())
-		.map_err(|err| ErrorInternalServerError(err))?
-	{
-        // パスワードが一致していればいい感じのを返す
-        Ok(HttpResponse::Ok().body(
-            common::liquid_build("html/admin.html")
-                .map_err(|err| ErrorInternalServerError(err))?
-                .render(&liquid::object!({}))
-                .map_err(|err| ErrorInternalServerError(err))?,
-        ))
-    } else {
-        // 一致していなければエラー
-        Err(ErrorForbidden("パスワードが違います"))
+    check_server_password(&conn, &pass.pass)?;
+    // パスワードが一致していればいい感じのを返す
+    // フラグメント
+    let mut stmt = conn.prepare("SELECT id,category,name,lore,status,skill FROM base_fragment")
+        .map_err(|err| ErrorInternalServerError(err))?;
+    let fragments = stmt.query_map([], |row| {
+        let status: [u8; 8] = row.get(4)?;
+        Ok(Fragment{
+            id: row.get(0)?,
+            category: row.get(1)?,
+            name: row.get(2)?,
+            lore: row.get::<_, String>(3)?.replace("<br>", "\n"),
+            hp: (status[0] as i16) << 8 | status[1] as i16,
+            mp: (status[2] as i16) << 8 | status[3] as i16,
+            atk: (status[4] as i16) << 8 | status[5] as i16,
+            tec: (status[6] as i16) << 8 | status[7] as i16,
+            skill: row.get(5)?,
+        })
+    })
+        .map_err(|err| ErrorInternalServerError(err))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|err| ErrorInternalServerError(err))?;
+    // スキル
+    let mut stmt = conn.prepare("SELECT id,name,lore,type,effect FROM skill")
+        .map_err(|err| ErrorInternalServerError(err))?;
+    let skills = stmt.query_map([], |row| {
+        let effect = battle::Command::convert(row.get(4)?).map_err(|_| rusqlite::Error::InvalidQuery)?;
+        let effect = effect.iter().map(|x| x.to_string()).collect::<Vec<String>>();
+        Ok(Skill{
+            id: row.get(0)?,
+            name: row.get(1)?,
+            lore: row.get::<_, String>(2)?.replace("<br>", "\n"),
+            timing: row.get(3)?,
+            effect: effect.join(" "),
+        })
+    })
+        .map_err(|err| ErrorInternalServerError(err))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|err| ErrorInternalServerError(err))?;
+    || -> Result<HttpResponse, liquid::Error> {
+        Ok(HttpResponse::Ok()
+            .cookie(Cookie::build("admin_password", &pass.pass)
+                .finish()
+            ).body(
+                liquid::ParserBuilder::with_stdlib()
+                    .build()?
+                    .parse(&fs::read_to_string("html/admin.html").unwrap())?
+                    .render(&liquid::object!({"fragment":fragments, "skill":skills}))?
+            )
+        )
+    }().map_err(|err| ErrorInternalServerError(err))
+}
+
+#[derive(Deserialize)]
+pub(super) struct SkillData {
+    id: Option<i32>,
+    name: String,
+    lore: String,
+    timing: i8,
+    effect: String,
+}
+pub(super) async fn update_skill(req: HttpRequest, info: web::Json<SkillData>) -> Result<String, actix_web::Error> {
+    // パスワード取得
+    let password =  req.cookie("admin_password")
+        .ok_or(ErrorForbidden("パスワードが無効です"))?;
+	// データベースに接続
+	let conn = common::open_database()?;
+    // パスワード確認
+    check_server_password(&conn, password.value())?;
+    // 処理開始
+    let re = Regex::new("\r|\n|\r\n").map_err(|err| ErrorInternalServerError(err))?;
+    let lore = common::html_special_chars(info.lore.clone());
+    let lore = re.replace_all(&lore, "<br>");
+    let mut command: Vec<u8> = Vec::new();
+    for s in info.effect.split(&[' ', ',']) {
+        let c = match s {
+            "HP" => battle::Command::Uhp,
+            "MP" => battle::Command::Ump,
+            "ATK" => battle::Command::Uatk,
+            "TEC" => battle::Command::Utec,
+            "自身HP" => battle::Command::Uhp,
+            "自身MP" => battle::Command::Ump,
+            "自身ATK" => battle::Command::Uatk,
+            "自身TEC" => battle::Command::Utec,
+            "相手HP" => battle::Command::Thp,
+            "相手MP" => battle::Command::Tmp,
+            "相手ATK" => battle::Command::Tatk,
+            "相手TEC" => battle::Command::Ttec,
+            "間合値" => battle::Command::ValueRange,
+            "逃走値" => battle::Command::ValueEscape,
+
+            "正" => battle::Command::Plus,
+            "負" => battle::Command::Minus,
+            "+" => battle::Command::Add,
+            "-" => battle::Command::Sub,
+            "*" => battle::Command::Mul,
+            "/" => battle::Command::Div,
+            "%" => battle::Command::Mod,
+            "~" => battle::Command::RandomRange,
+
+            "消耗" => battle::Command::Cost,
+            "強命消耗" => battle::Command::ForceCost,
+            "間合" => battle::Command::Range,
+            "確率" => battle::Command::Random,
+            "中断" => battle::Command::Break,
+
+            "攻撃" => battle::Command::Attack,
+            "貫通攻撃" => battle::Command::ForceAttack,
+            "精神攻撃" => battle::Command::MindAttack,
+            "回復" => battle::Command::Heal,
+            "自傷" => battle::Command::SelfDamage,
+            "集中" => battle::Command::Concentrate,
+            "ATK強化" => battle::Command::BuffAtk,
+            "TEC強化" => battle::Command::BuffTec,
+            "移動" => battle::Command::Move,
+            "間合変更" => battle::Command::ChangeRange,
+            "逃走ライン" => battle::Command::ChangeEscapeRange,
+            "対象変更" => battle::Command::ChangeUser,
+
+            other => battle::Command::Value(other.parse::<i16>().map_err(|err| ErrorInternalServerError(err))?),
+        }.to_i16();
+        command.push((c >> 8) as u8);
+        command.push(c as u8);
+    }
+    match info.id {
+        Some(id) => {
+            conn.execute("UPDATE skill SET name=?1,lore=?2,type=?3,effect=?4 WHERE id=?5", params![info.name, lore, info.timing, command, id])
+                .map_err(|err| ErrorInternalServerError(err))?;
+            Ok(format!("スキル編集 {}: {}", id, info.name))
+        }
+        None => {
+            conn.execute("INSERT INTO skill(name,lore,type,effect) VALUES(?1,?2,?3,?4)", params![info.name, lore, info.timing, command])
+                .map_err(|err| ErrorInternalServerError(err))?;
+            Ok(format!("スキル追加 {}: {}", conn.last_insert_rowid(), info.name))
+        }
     }
 }
 
 #[derive(Deserialize)]
-pub struct MakeData {
-    value: String,
+pub(super) struct FragmentData {
+    id: Option<i32>,
+    category: String,
+    name: String,
+    lore: String,
+    hp: i16,
+    mp: i16,
+    atk: i16,
+    tec: i16,
+    skill: Option<i32>,
 }
-pub async fn make_skill(path: web::Path<String>, info: web::Json<MakeData>) -> Result<String, actix_web::Error> {
-	// データベースに接続
-	let conn = common::open_database()?;
-    // パスワード確認
-    if check_server_password(&conn, path.into_inner())
-		.map_err(|err| ErrorInternalServerError(err))?
-	{
-        // スキルID スキル名 説明文 タイミング コマンド...
-        let mut sp = info.value.split('\t');
-        || -> Option<String> {
-            let name = sp.next()?;
-            let lore = sp.next()?;
-            let timing = match sp.next()? {
-                "通常" => Timing::Active,
-                "反応" => Timing::Reactive,
-                "開始" => Timing::Start,
-                "勝利" => Timing::Win,
-                "敗北" => Timing::Lose,
-                "無感" => Timing::None,
-                _ => Timing::None,
-            };
-            let mut command = Vec::new();
-            for s in sp.next()?.split(',') {
-                match s {
-                    "HP" => command.push(battle::Command::Uhp),
-                    "MP" => command.push(battle::Command::Ump),
-                    "ATK" => command.push(battle::Command::Uatk),
-                    "TEC" => command.push(battle::Command::Utec),
-                    "自身HP" => command.push(battle::Command::Uhp),
-                    "自身MP" => command.push(battle::Command::Ump),
-                    "自身ATK" => command.push(battle::Command::Uatk),
-                    "自身TEC" => command.push(battle::Command::Utec),
-                    "相手HP" => command.push(battle::Command::Thp),
-                    "相手MP" => command.push(battle::Command::Tmp),
-                    "相手ATK" => command.push(battle::Command::Tatk),
-                    "相手TEC" => command.push(battle::Command::Ttec),
-                    "間合値" => command.push(battle::Command::ValueRange),
-                    "逃走値" => command.push(battle::Command::ValueEscape),
-
-                    "正" => command.push(battle::Command::Plus),
-                    "負" => command.push(battle::Command::Minus),
-                    "+" => command.push(battle::Command::Add),
-                    "-" => command.push(battle::Command::Sub),
-                    "*" => command.push(battle::Command::Mul),
-                    "/" => command.push(battle::Command::Div),
-                    "%" => command.push(battle::Command::Mod),
-                    "~" => command.push(battle::Command::RandomRange),
-
-                    "消耗" => command.push(battle::Command::Cost),
-                    "強命消耗" => command.push(battle::Command::ForceCost),
-                    "間合" => command.push(battle::Command::Range),
-                    "確率" => command.push(battle::Command::Random),
-                    "中断" => command.push(battle::Command::Break),
-
-                    "攻撃" => command.push(battle::Command::Attack),
-                    "貫通攻撃" => command.push(battle::Command::ForceAttack),
-                    "精神攻撃" => command.push(battle::Command::MindAttack),
-                    "回復" => command.push(battle::Command::Heal),
-                    "自傷" => command.push(battle::Command::SelfDamage),
-                    "集中" => command.push(battle::Command::Concentrate),
-                    "ATK強化" => command.push(battle::Command::BuffAtk),
-                    "TEC強化" => command.push(battle::Command::BuffTec),
-                    "移動" => command.push(battle::Command::Move),
-                    "間合変更" => command.push(battle::Command::ChangeRange),
-                    "逃走ライン" => command.push(battle::Command::ChangeEscapeRange),
-                    "対象変更" => command.push(battle::Command::ChangeUser),
-
-                    other => {command.push(battle::Command::Value(other.parse::<i16>().ok()?))},
-                }
-            }
-            match create_skill(&conn, name, lore, timing, command) {
-                Ok(id) => {
-                    Some(format!("スキルの作成完了 ID{} : {}", id, name))
-                },
-                Err(err) => {
-                    Some(format!("{}", err))
-                }
-            }
-        }().ok_or(ErrorBadRequest("スキルの情報が不十分です"))
-    } else {
-        // 一致していなければエラー
-        Err(ErrorForbidden("パスワードが違います"))
-    }
-}
-
-pub async fn make_fragment(path: web::Path<String>, info: web::Json<MakeData>) -> Result<String, actix_web::Error> {
+pub(super) async fn update_fragment(req: HttpRequest, info: web::Json<FragmentData>) -> Result<String, actix_web::Error> {
+    // パスワード取得
+    let password =  req.cookie("admin_password")
+        .ok_or(ErrorForbidden("パスワードが無効です"))?;
     // データベースに接続
 	let conn = common::open_database()?;
-    if check_server_password(&conn, path.into_inner())
-		.map_err(|err| ErrorInternalServerError(err))?
-	{
-        let mut sp = info.value.split('\t');
-        let err = "フラグメントの情報が不完全です";
-        let category = sp.next().ok_or(ErrorBadRequest(err))?;
-        let name = sp.next().ok_or(ErrorBadRequest(err))?;
-        let lore = sp.next().ok_or(ErrorBadRequest(err))?;
-        let hp = sp.next().ok_or(ErrorBadRequest(err))?.parse::<i16>().map_err(|_| ErrorBadRequest(err))?;
-        let mp = sp.next().ok_or(ErrorBadRequest(err))?.parse::<i16>().map_err(|_| ErrorBadRequest(err))?;
-        let atk = sp.next().ok_or(ErrorBadRequest(err))?.parse::<i16>().map_err(|_| ErrorBadRequest(err))?;
-        let tec = sp.next().ok_or(ErrorBadRequest(err))?.parse::<i16>().map_err(|_| ErrorBadRequest(err))?;
-        let skill = sp.next().ok_or(ErrorBadRequest(err))?;
-        let status = [
-            (hp >> 8) as u8, hp as u8,
-            (mp >> 8) as u8, mp as u8,
-            (atk >> 8) as u8, atk as u8,
-            (tec >> 8) as u8, tec as u8,
-        ];
-        if skill == "なし" {
-            conn.execute("INSERT INTO base_fragment(category,name,lore,status) VALUES(?1,?2,?3,?4)", params![category, name, lore, status])
+    // パスワード確認
+    check_server_password(&conn, password.value())?;
+    // 処理開始
+    let re = Regex::new("\r|\n|\r\n").map_err(|err| ErrorInternalServerError(err))?;
+    let lore = common::html_special_chars(info.lore.clone());
+    let lore = re.replace_all(&lore, "<br>");
+    let status = [
+        (info.hp >> 8) as u8, info.hp as u8,
+        (info.mp >> 8) as u8, info.mp as u8,
+        (info.atk >> 8) as u8, info.atk as u8,
+        (info.tec >> 8) as u8, info.tec as u8,
+    ];
+    match info.id {
+        Some(id) => {
+            conn.execute("UPDATE base_fragment SET category=?1,name=?2,lore=?3,status=?4,skill=?5 WHERE id=?6", params![info.category, info.name, lore, status, info.skill, id])
                 .map_err(|err| ErrorInternalServerError(err))?;
-        } else {
-            conn.execute("INSERT INTO base_fragment(category,name,lore,status,skill) VALUES(?1,?2,?3,?4,(SELECT id FROM skill WHERE name=?5 LIMIT 1))", params![category, name, lore, status, skill])
-                .map_err(|err| ErrorInternalServerError(err))?;
+            Ok(format!("フラグメント編集 {}: {}", id, info.name))
         }
-        Ok(format!("フラグメント作成完了 ID{} : {}", conn.last_insert_rowid(), name))
-    } else {
-        Err(ErrorForbidden("パスワードが違います"))
+        None => {
+            conn.execute("INSERT INTO base_fragment(category,name,lore,status,skill) VALUES(?1,?2,?3,?4,?5)", params![info.category, info.name, lore, status, info.skill])
+                .map_err(|err| ErrorInternalServerError(err))?;
+            Ok(format!("フラグメント追加 {}: {}", conn.last_insert_rowid(), info.name))
+        }
     }
 }

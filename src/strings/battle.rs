@@ -153,7 +153,7 @@ impl Command {
             Self::ChangeUser => -0x3c,
         }
     }
-    fn to_string(&self) -> String {
+    pub fn to_string(&self) -> String {
         match self {
             Self::Value(v) => v.to_string(),
             Self::Uhp => "HP".to_string(),
@@ -232,16 +232,16 @@ impl Timing {
             _ => Self::None,
         }
     }
-    pub fn to_i8(&self) -> i8 {
-        match self {
-            Self::Active => 0,
-            Self::Reactive => 1,
-            Self::Start => 2,
-            Self::Win => 3,
-            Self::Lose => 4,
-            Self::None => 5,
-        }
-    }
+    // pub fn to_i8(&self) -> i8 {
+    //     match self {
+    //         Self::Active => 0,
+    //         Self::Reactive => 1,
+    //         Self::Start => 2,
+    //         Self::Win => 3,
+    //         Self::Lose => 4,
+    //         Self::None => 5,
+    //     }
+    // }
 }
 impl Serialize for Timing {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -419,10 +419,10 @@ impl Battle {
             }
         }
         // デバッグ用出力
-        println!("{}\nHP:{}, MP:{}, ATK:{}, TEC{}", result[0].name, result[0].status.hp, result[0].status.mp, result[0].status.atk, result[0].status.tec);
-        for s in &result[0].skill { println!("{}", s.0.name); }
-        println!("{}\nHP:{}, MP:{}, ATK:{}, TEC{}", result[1].name, result[1].status.hp, result[1].status.mp, result[1].status.atk, result[1].status.tec);
-        for s in &result[1].skill { println!("{}", s.0.name); }
+        // println!("{}\nHP:{}, MP:{}, ATK:{}, TEC{}", result[0].name, result[0].status.hp, result[0].status.mp, result[0].status.atk, result[0].status.tec);
+        // for s in &result[0].skill { println!("{}", s.0.name); }
+        // println!("{}\nHP:{}, MP:{}, ATK:{}, TEC{}", result[1].name, result[1].status.hp, result[1].status.mp, result[1].status.atk, result[1].status.tec);
+        // for s in &result[1].skill { println!("{}", s.0.name); }
         // 基幹データ取得
         let (range, escape_range): (i16, i16) = conn.query_row("SELECT start_range,start_escape_range FROM gamerule", [], |row|Ok((row.get(0)?, row.get(1)?)))?;
         // 返却
@@ -442,8 +442,12 @@ impl Battle {
         let mut skill_id: Option<usize> = None;
         // スキルを先頭から検索
         for i in 0..self.character[user].skill.len() {
-            // タイミングが同一で、かつ勝利・敗北時にはそのスキルが一度も発動していないのを確認
-            if self.character[user].skill[i].0.timing == timing && !(once_skill && !self.character[user].skill[i].1) {
+            // タイミングが同一
+            if self.character[user].skill[i].0.timing == timing {
+                // 勝利・敗北時にはそのスキルが一度も発動していないのを確認
+                if once_skill && self.character[user].skill[i].1 {
+                    continue;
+                }
                 // 完了フラグを初期化
                 is_complete = true;
                 let mut stack = Vec::<i16>::new();

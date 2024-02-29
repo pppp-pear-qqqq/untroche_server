@@ -166,7 +166,16 @@ function load_fragments(main_container, trash_container) {
 						hold_fragment = event.currentTarget;
 						hold_fragment.classList.add('hold');
 					};
+					e.ontouchstart = event => {
+						hold_fragment = event.currentTarget;
+						hold_fragment.classList.add('hold');
+					};
 					e.ondragend = () => {
+						hold_fragment.classList.remove('hold');
+						hold_fragment = null;
+						update_status(main_container);
+					};
+					e.ontouchend = () => {
 						hold_fragment.classList.remove('hold');
 						hold_fragment = null;
 						update_status(main_container);
@@ -176,6 +185,11 @@ function load_fragments(main_container, trash_container) {
 					e.classList.add('none');
 				}
 				e.ondragenter = trade_fragment;
+				e.ontouchmove = event => {
+					event.preventDefault();
+					const pointed = document.elementFromPoint(event.pageX - window.scrollX, event.pageY - window.scrollY);
+					if(pointed.getAttribute('draggable') && pointed !== hold_fragment) trade_fragment();
+				};
 				main_container.appendChild(e);
 			}
 			trash_container.replaceChildren();

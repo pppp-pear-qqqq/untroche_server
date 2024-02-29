@@ -1,5 +1,3 @@
-use std::fs;
-
 use actix_web::error::{ErrorBadRequest, ErrorInternalServerError};
 use awc::Client;
 use fancy_regex::Regex;
@@ -165,21 +163,3 @@ pub fn calc_fragment_kins(status: [u8; 8]) -> i32 {
     kins += ((status[6] as i32) << 8 | status[7] as i32) * 3;
     return kins.max(0);
 }
-
-// ページ
-pub fn _error_page() -> Result<liquid::Template, liquid::Error> {
-    liquid::ParserBuilder::with_stdlib()
-        .build()?
-        .parse(&fs::read_to_string("html/error.html").unwrap())
-}
-pub fn _test_page() -> Result<liquid::Template, liquid::Error> {
-    liquid::ParserBuilder::with_stdlib()
-        .build()?
-        .parse(&fs::read_to_string("html/test.html").unwrap())
-}
-pub fn liquid_build(path: &str) -> Result<liquid::Template, liquid::Error> {
-    liquid::ParserBuilder::with_stdlib()
-        .build()?
-        .parse(&fs::read_to_string(path).unwrap())
-}
-

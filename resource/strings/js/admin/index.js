@@ -1,31 +1,70 @@
-function make_skill() {
-	let v = document.getElementById('input').value;
-	const output = document.getElementById('output');
-	output.innerHTML = '';
-	v.split('\n').forEach(line => {
-		if(line !== '') ajax.open({
-			url: 'admin/untroche/make_skill',
-			ret: 'text',
-			post: {value: line},
-			ok: (ret) => {
-				output.innerHTML += ret + '<br>';
-			}
-		});
+function sql() {
+
+}
+
+/**
+ * @param {HTMLElement} form 
+ */
+function update_skill(form, make) {
+	console.log(form);
+	let values = form.querySelectorAll('[name]');
+	let params = {};
+	values.forEach(v => {
+		params[v.getAttribute('name')] = v.value;
+	});
+	if (make !== true) {
+		params['id'] = Number(form.dataset.id);
+	}
+	params['timing'] = Number(params['timing']);
+	ajax.open({
+		url: 'admin/update_skill',
+		ret: 'text',
+		post: params,
+		ok: ret => {
+			alertify.success(ret);
+		}
 	});
 }
-function make_fragment() {
-	let v = document.getElementById('input').value;
-	const output = document.getElementById('output');
-	output.innerHTML = '';
-	console.log(v);
-	v.split('\n').forEach(line => {
-		if(line !== '') ajax.open({
-			url: 'admin/untroche/make_fragment',
-			ret: 'text',
-			post: {value: line},
-			ok: (ret) => {
-				output.innerHTML += ret + '<br>';
-			}
-		});
-	})
+/**
+ * @param {HTMLElement} form 
+ */
+function update_fragment(form, make) {
+	let values = form.querySelectorAll('[name]');
+	let params = {};
+	values.forEach(v => {
+		params[v.getAttribute('name')] = v.value;
+	});
+	if (make !== true) {
+		params['id'] = Number(form.dataset.id);
+	}
+	params['hp'] = Number(params['hp']);
+	params['mp'] = Number(params['mp']);
+	params['atk'] = Number(params['atk']);
+	params['tec'] = Number(params['tec']);
+	params['skill'] = Number(params['skill']);
+	ajax.open({
+		url: 'admin/update_fragment',
+		ret: 'text',
+		post: params,
+		ok: ret => {
+			alertify.success(ret);
+		}
+	});
 }
+
+window.addEventListener('load', async () => {
+	document.querySelectorAll('label.skill>input').forEach(e => {
+		if (e.value !== '') {
+			const parent = e.parentNode;
+			const target = document.querySelector(`.skill[data-id="${e.value}"]>[name="name"]`);
+			if (target !== null) {
+				parent.append(target.value);
+			}
+		}
+	});
+	document.querySelectorAll('[name="timing"]').forEach(e => {
+		if (e.dataset.timing !== undefined) {
+			e.options[Number(e.dataset.timing)].selected = true;
+		}
+	});
+});
