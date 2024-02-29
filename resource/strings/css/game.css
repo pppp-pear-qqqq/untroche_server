@@ -552,6 +552,7 @@
 		flex-grow: 1;
 		flex-basis: 0;
 		flex-direction: column;
+		overflow-y: auto;
 		>.character {
 			>.footer {
 				display: none;

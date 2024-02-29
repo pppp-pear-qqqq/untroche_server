@@ -1,6 +1,6 @@
 use std::fs;
 
-use actix_web::{error::{ErrorForbidden, ErrorInternalServerError}, web, HttpRequest, HttpResponse};
+use actix_web::{error::{ErrorBadRequest, ErrorForbidden, ErrorInternalServerError}, web, HttpRequest, HttpResponse};
 use awc::cookie::Cookie;
 use fancy_regex::Regex;
 use rusqlite::{params, Connection};
@@ -109,6 +109,12 @@ struct Skill {
     timing: i8,
     effect: String,
 }
+#[derive(Serialize)]
+struct Character {
+    eno: i16,
+    name: String,
+    location: String,
+}
 #[derive(Deserialize)]
 pub(super) struct Password {
     pass: String,
@@ -157,6 +163,19 @@ pub async fn index(pass: web::Query<Password>) -> Result<HttpResponse, actix_web
         .map_err(|err| ErrorInternalServerError(err))?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|err| ErrorInternalServerError(err))?;
+    // キャラクター
+    let mut stmt = conn.prepare("SELECT eno,name,location FROM character")
+        .map_err(|err| ErrorInternalServerError(err))?;
+    let characters = stmt.query_map([], |row| {
+        Ok(Character{
+            eno: row.get(0)?,
+            name: row.get(1)?,
+            location: row.get(2)?,
+        })
+    })
+        .map_err(|err| ErrorInternalServerError(err))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|err| ErrorInternalServerError(err))?;
     || -> Result<HttpResponse, liquid::Error> {
         Ok(HttpResponse::Ok()
             .cookie(Cookie::build("admin_password", &pass.pass)
@@ -165,12 +184,47 @@ pub async fn index(pass: web::Query<Password>) -> Result<HttpResponse, actix_web
                 liquid::ParserBuilder::with_stdlib()
                     .build()?
                     .parse(&fs::read_to_string("html/admin.html").unwrap())?
-                    .render(&liquid::object!({"fragment":fragments, "skill":skills}))?
+                    .render(&liquid::object!({"fragment":fragments, "skill":skills, "character":characters}))?
             )
         )
     }().map_err(|err| ErrorInternalServerError(err))
 }
 
+#[derive(Deserialize)]
+pub(super) struct Sql {
+    sql: String,
+}
+pub(super) async fn execute_sql(req: HttpRequest, info: web::Json<Sql>) -> Result<String, actix_web::Error> {
+    // パスワード取得
+    let password =  req.cookie("admin_password")
+        .ok_or(ErrorForbidden("パスワードが無効です"))?;
+	// データベースに接続
+	let conn = common::open_database()?;
+    // パスワード確認
+    check_server_password(&conn, password.value())?;
+    // 処理開始
+    conn.execute(&info.sql, [])
+        .map_err(|err| ErrorBadRequest(err))?;
+    Ok(format!("成功: {}", info.sql))
+}
+
+#[derive(Deserialize)]
+pub(super) struct CharacterData {
+    eno: i16,
+    location: String,
+}
+pub(super) async fn update_character(req: HttpRequest, info: web::Json<CharacterData>) -> Result<String, actix_web::Error> {
+    // パスワード取得
+    let password =  req.cookie("admin_password")
+        .ok_or(ErrorForbidden("パスワードが無効です"))?;
+	// データベースに接続
+	let conn = common::open_database()?;
+    // パスワード確認
+    check_server_password(&conn, password.value())?;
+    // 処理開始
+    conn.execute("UPDATE character SET location=?1 WHERE eno=?2", params![info.location, info.eno]).map_err(|err| ErrorBadRequest(err))?;
+    Ok(format!("Eno.{}のロケーションを変更しました", info.eno))
+}
 #[derive(Deserialize)]
 pub(super) struct SkillData {
     id: Option<i32>,

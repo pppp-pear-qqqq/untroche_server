@@ -131,7 +131,7 @@ class Battle {
 								pre = '間合判定'
 								body = `<span class="special">${value}</span> ── 適正`;
 							} break;
-							case '消耗': {
+							case '強命消耗': {
 								pre = `${battle.character[actor].name}は構える`
 								body = `MPを<span class="special">${value}</span>消費`;
 								battle.character[actor].status.mp -= value;

@@ -8,6 +8,8 @@ mod strings;
 async fn main() -> Result<(), std::io::Error> {
     let addr = "0.0.0.0:80";
 
+    strings::test();
+
     let server = HttpServer::new(move || {
         App::new()
             .route("/", web::get().to(index))

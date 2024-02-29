@@ -23,6 +23,7 @@ mod admin;
 pub fn config(cfg: &mut web::ServiceConfig) {
     cfg.service(web::scope("/strings")
 		.route("", web::get().to(index))
+		.route("/rulebook", web::get().to(rulebook))
 		.route("/register", web::post().to(func::register))
 		.route("/login", web::post().to(func::login))
 		.route("/send_chat", web::post().to(func::send_chat))
@@ -41,6 +42,8 @@ pub fn config(cfg: &mut web::ServiceConfig) {
 		.route("/get_battle_reserve", web::get().to(func::get_battle_reserve))
 		.route("/next", web::post().to(scene::next))
 		.route("/admin", web::get().to(admin::index))
+		.route("/admin/execute_sql", web::post().to(admin::execute_sql))
+		.route("/admin/update_character", web::post().to(admin::update_character))
 		.route("/admin/update_skill", web::post().to(admin::update_skill))
 		.route("/admin/update_fragment", web::post().to(admin::update_fragment))
         .service(Files::new("/", "resource/strings").show_files_listing())
@@ -113,16 +116,21 @@ async fn index(req: HttpRequest) -> Result<HttpResponse, actix_web::Error> {
     }().map_err(|err| ErrorInternalServerError(err))
 }
 
+async fn rulebook() -> HttpResponse {
+    HttpResponse::Ok()
+        .body(fs::read_to_string("html/rulebook.html").unwrap())
+}
+
 #[allow(dead_code)]
 pub fn test() {
-    // let _ = admin::preset();
-    let mut data = std::collections::HashMap::from([("select".to_string(), "throw".to_string())]);
-    match scene::process_line(fs::read_to_string("game/scene/test").unwrap().as_str(), 1, &mut data) {
-        Ok(ok) => {
-            println!("{}", ok);
-        }
-        Err(err) => {
-            println!("{}", err);
-        }
-    }
+    let _ = admin::preset();
+    // let mut data = std::collections::HashMap::from([("select".to_string(), "throw".to_string())]);
+    // match scene::process_line(fs::read_to_string("game/scene/test").unwrap().as_str(), 1, &mut data) {
+    //     Ok(ok) => {
+    //         println!("{}", ok);
+    //     }
+    //     Err(err) => {
+    //         println!("{}", err);
+    //     }
+    // }
 }

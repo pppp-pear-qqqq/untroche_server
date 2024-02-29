@@ -657,7 +657,7 @@ fn check_battle_result(battle: &mut Battle) -> Result<Option<BattleResult>, Stri
     // 戦闘終了判定
     let death_left = battle.character[0].status.hp <= 0;
     let death_right = battle.character[1].status.hp <= 0;
-    println!("H {}, M {}, A {}, T {} ... H {}, M {}, A {}, T {}", battle.character[0].status.hp, battle.character[0].status.mp, battle.character[0].status.atk, battle.character[0].status.tec, battle.character[1].status.hp, battle.character[1].status.mp, battle.character[1].status.atk, battle.character[1].status.tec);
+    // println!("H {}, M {}, A {}, T {} ... H {}, M {}, A {}, T {}", battle.character[0].status.hp, battle.character[0].status.mp, battle.character[0].status.atk, battle.character[0].status.tec, battle.character[1].status.hp, battle.character[1].status.mp, battle.character[1].status.atk, battle.character[1].status.tec);
     if death_left && death_right {
         // どちらもHP0以下なら引き分け
         battle.log.turn.push(LogTurn::make(SYSTEM, Some(CHECK), None, None));

@@ -158,7 +158,7 @@ function load_fragments(main_container, trash_container) {
 						s.dataset.word = f['skill']['word'];
 						s.dataset.lore = f['skill']['lore'];
 						s.dataset.timing = f['skill']['timing'];
-						s.dataset.effect = f['skill']['effect'];
+						s.dataset.effect = f['skill']['effect'].join(' ');
 					} else {
 						s.classList.add('none');
 					}
@@ -450,7 +450,7 @@ function preview_open() {
 	}
 	const e_location = e.querySelector('.location');
 	if (location)
-		location.innerHTML = '<img src="pic/lock_fill.svg" width="21" height="21">';
+		location.innerHTML = '<img src="strings/pic/lock_fill.svg" width="21" height="21">';
 	else
 		location.innerText = '現在地';
 	e.querySelector('.name').innerText = name;
@@ -715,10 +715,12 @@ window.addEventListener('load', async () => {
 			// 未選択なら
 			if (e !== select_tab_timeline) {
 				// これを選択する
-				if (select_tab_timeline.classList.contains('onetime'))
-					select_tab_timeline.remove();
-				else
-					select_tab_timeline.classList.remove('select');
+				if (select_tab_timeline !== null) {
+					if (select_tab_timeline.classList.contains('onetime'))
+						select_tab_timeline.remove();
+					else
+						select_tab_timeline.classList.remove('select');
+				}
 				e.classList.add('select');
 				select_tab_timeline = e;
 				// 検索フォームを開く

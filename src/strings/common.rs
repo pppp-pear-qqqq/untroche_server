@@ -41,22 +41,18 @@ pub fn session_to_eno(conn: &Connection, session: &str) -> Result<i16, actix_web
 
 // Discordウェブフックに送信
 pub async fn send_webhook(eno: i16, content: String) -> Result<(), String> {
-    println!("Webhook送信開始");
     let url: Option<String> = open_database()
         .map_err(|err| err.to_string())?
         .query_row("SELECT webhook FROM user WHERE eno=?1", &[&eno], |row| row.get(0)).map_err(|err| err.to_string())?;
     if let Some(url) = url {
-        println!("URL取得完了: {}", url);
         let client = Client::default();
         client.post(url)
             .insert_header(("Content-Type", "application/json"))
             .send_body(format!(r#"{{"username":"\"Strings\"","avatar_url":"https://game.428.st/uploads/8d6abc63-6420-4580-8bd6-38b982a01632.png","content":"{}"}}"#, content))
             .await
             .map_err(|err| err.to_string())?;
-        println!("Webhook送信完了");
     }
     // ウェブフックが登録されてなくて送信できなかったパターンは成功として扱う
-    println!("Webhook送信終了");
     Ok(())
 }
 

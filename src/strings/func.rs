@@ -47,14 +47,17 @@ pub(super) struct RegisterData {
 }
 pub(super) async fn register(info: web::Json<RegisterData>) -> Result<String, actix_web::Error> {
     // 与えられた情報の整合性確認
-    if info.name.grapheme_indices(true).count() > 16 {
+    let password_length = info.password.chars().count();
+    if password_length > 16 || password_length < 4 {
+        return Err(ErrorBadRequest("パスワードは4文字以上16文字以下に設定してください"));
+    } else if info.name.grapheme_indices(true).count() > 16 {
         return Err(ErrorBadRequest("名前が長すぎます"));
     } else if info.acronym.grapheme_indices(true).count() != 1 {
         return Err(ErrorBadRequest("短縮名が1文字ではありません"));
     } else if info.fragment.len() > 5 {
         return Err(ErrorBadRequest("取得しようとしているフラグメントが多すぎます"));
     }
-    println!("{}", &info.color[1..]);
+    // println!("{}", &info.color[1..]);
     let color_raw = u32::from_str_radix(&info.color[1..], 16).map_err(|err| ErrorBadRequest(err))?;
     let color = [(color_raw >> 16) as u8, (color_raw >> 8) as u8, color_raw as u8];
     // データベースに接続
@@ -216,7 +219,8 @@ pub(super) async fn get_chat(req: HttpRequest, info: web::Query<GetChatData>) ->
         }
     }
     let sql = sql.join(" AND ");
-    let sql = "SELECT id,timestamp,from_eno,to_eno,location,color,name,word FROM timeline".to_string() + if sql != "" { " WHERE " } else { "" } + &sql + " ORDER BY id DESC LIMIT :num";
+    let sql = "SELECT id,datetime(timestamp,'+9 hours'),from_eno,to_eno,location,color,name,word FROM timeline".to_string() + if sql != "" { " WHERE " } else { "" } + &sql + " ORDER BY id DESC LIMIT :num";
+    // println!("{}", sql);
     // データベースから取得
     || -> Result<_, rusqlite::Error> {
         let mut stmt = conn.prepare(sql.as_str())?;
@@ -544,7 +548,11 @@ pub(super) async fn get_profile(req: HttpRequest, info: web::Query<GetProfileDat
                 fullname = name.clone();
             }
             if slot <= 20 {
-                Ok(Some(ProfileFragment{ name, category, lore: row.get(3)? }))
+                if category != "秘匿" {
+                    Ok(Some(ProfileFragment{ name, category, lore: row.get(3)? }))
+                } else {
+                    Ok(None)
+                }
             } else {
                 Ok(None)
             }

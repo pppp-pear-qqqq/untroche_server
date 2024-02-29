@@ -1,5 +1,28 @@
 function sql() {
-
+	ajax.open({
+		url: 'admin/execute_sql',
+		ret: 'text',
+		post: {sql: document.getElementById('input').value},
+		ok: ret => {
+			alertify.success(ret);
+		}
+	});
+	
+}
+/**
+ * @param {HTMLElement} form 
+ */
+function update_character(form) {
+	const eno = form.querySelector('.eno').innerText;
+	const location = form.querySelector('[name="location"]').value;
+	ajax.open({
+		url: 'admin/update_character',
+		ret: 'text',
+		post: {eno: Number(eno), location: location},
+		ok: ret => {
+			alertify.success(ret);
+		}
+	});
 }
 
 /**

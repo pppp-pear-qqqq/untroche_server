@@ -375,7 +375,7 @@ pub fn process_line(scene: &str, eno: i16, data: &mut HashMap<String, String>) -
                 .collect::<Result<Vec<(String, i32)>, rusqlite::Error>>()
                 .map_err(|err| ErrorInternalServerError(err))?;
             if scenes.iter().count() == 0 {
-                return Ok("この場所には何もない。\n<br>$(草原へ,草原)\n!yield select\n!location select<br>……\n…………".to_string());
+                return Ok(process_line(fs::read_to_string("game/scene/何もない").unwrap().as_str(), eno, data)?.to_string())
             }
             // ランダム抽選の用意
             let dist = WeightedIndex::new(scenes.iter().map(|x| x.1).collect::<Vec<i32>>())
