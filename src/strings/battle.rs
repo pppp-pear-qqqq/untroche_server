@@ -732,9 +732,9 @@ pub fn battle(ch0_eno: i16, ch1_eno: i16) -> Result<Log, String> {
         battle.log.turn.push(LogTurn::make(SYSTEM, Some(&format!("<hr>ターン {}", turn)), None, None));
         for i in 0..battle.character.len() {
             battle.skill_execute(i, Timing::Active)?;
-            // 戦闘終了判定
-            battle.result = check_battle_result(&mut battle)?;
         }
+        // 戦闘終了判定
+        battle.result = check_battle_result(&mut battle)?;
         turn += 1;
     }
     // 戦闘終了時台詞

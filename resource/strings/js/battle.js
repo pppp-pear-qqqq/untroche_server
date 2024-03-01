@@ -146,7 +146,7 @@ class Battle {
 								const mp = battle.character[actor].status.mp;
 								if (mp < 0) {
 									battle.character[actor].status.hp += mp;
-									body += ` 不足分をHPで補い<span class="minus">${-mp}</span>のダメージ`
+									body += ` <span class="minus">${-mp}</span>のダメージ`
 								}
 							} break;
 							case '確率': {

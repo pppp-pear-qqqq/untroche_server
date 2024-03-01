@@ -158,7 +158,63 @@ function load_fragments(main_container, trash_container) {
 						s.dataset.word = f['skill']['word'];
 						s.dataset.lore = f['skill']['lore'];
 						s.dataset.timing = f['skill']['timing'];
-						s.dataset.effect = f['skill']['effect'].join(' ');
+						let stack = [];
+						let effect = [];
+						f['skill']['effect'].forEach(e => {
+							switch (e) {
+								case '正': {
+									stack.push(`+${stack.pop()}`);
+								} break;
+								case '負': {
+									stack.push(`-${stack.pop()}`);
+								} break;
+								case '+': {
+									stack.push(`${stack.pop()} + ${stack.pop()}`);
+								} break;
+								case '-': {
+									stack.push(`${stack.pop()} - ${stack.pop()}`);
+								} break;
+								case '*': {
+									stack.push(`${stack.pop()} * ${stack.pop()}`);
+								} break;
+								case '/': {
+									stack.push(`${stack.pop()} / ${stack.pop()}`);
+								} break;
+								case '%': {
+									stack.push(`${stack.pop()} % ${stack.pop()}`);
+								} break;
+								case '~': {
+									stack.push(`${stack.pop()} ~ ${stack.pop()}`);
+								} break;
+								case '消耗':
+								case '強命消耗':
+								case '確率':
+								case '攻撃':
+								case '貫通攻撃':
+								case '精神攻撃':
+								case '回復':
+								case '自傷':
+								case '集中':
+								case 'ATK変化':
+								case 'TEC変化':
+								case '移動':
+								case '間合変更':
+								case '逃走ライン': {
+									effect.push(`${e}(${stack.pop()})`);
+								} break;
+								case '間合': {
+									effect.push(`${e}(${stack.pop()}, ${stack.pop()})`);
+								} break;
+								case '中断':
+								case '対象変更': {
+									effect.push(e);
+								} break;
+								default: {
+									stack.push(e);
+								}
+							}
+						});
+						s.dataset.effect = effect.join(', ');
 					} else {
 						s.classList.add('none');
 					}

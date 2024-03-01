@@ -18,7 +18,7 @@ function register() {
 		post: data,
 		ok: ret => {
 			Cookie.make('login_session', ret).path().max_age(60 * 60 * 24 * 7).set();
-			localStorage.setItem('timeline','[{"name":"現在位置","get":"{\'num\':20}"},{"name":"自分宛て","get":"{\'num\':\'20\',\'to\':0,\'location\':\'*\'}"},{"name":"自分発言","get":"{\'num\':\'20\',\'from\':0,\'location\':\'*\'}"}]');
+			reset_timeline();
 			location.reload();
 		}
 	});

@@ -31,6 +31,10 @@ function array_to_colorcode(arg) {
 	return `${arg[0].toString(16).padStart(2,'0')}${arg[1].toString(16).padStart(2,'0')}${arg[2].toString(16).padStart(2, '0')}`
 }
 
+function reset_timeline() {
+	localStorage.setItem('timeline','[{"name":"現在位置","get":"{\'num\':20}"},{"name":"自分宛て","get":"{\'num\':\'20\',\'to\':0,\'location\':\'*\'}"},{"name":"自分発言","get":"{\'num\':\'20\',\'from\':0,\'location\':\'*\'}"}]');
+}
+
 /**
  * タグをいい感じに置換した文字列を返す
  * ついでに特殊文字をエスケープする
