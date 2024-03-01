@@ -7,7 +7,7 @@ use super::common;
 
 static SYSTEM: &str = "strings";
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 #[allow(dead_code)]
 pub enum Command {
     Value(i16),
@@ -211,7 +211,7 @@ enum SkillResult {
     Fail,
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 #[allow(dead_code)]
 pub enum Timing {
     Active,
@@ -232,16 +232,16 @@ impl Timing {
             _ => Self::None,
         }
     }
-    pub fn to_i8(&self) -> i8 {
-        match self {
-            Self::Active => 0,
-            Self::Reactive => 1,
-            Self::Start => 2,
-            Self::Win => 3,
-            Self::Lose => 4,
-            Self::None => 5,
-        }
-    }
+    // pub fn to_i8(&self) -> i8 {
+    //     match self {
+    //         Self::Active => 0,
+    //         Self::Reactive => 1,
+    //         Self::Start => 2,
+    //         Self::Win => 3,
+    //         Self::Lose => 4,
+    //         Self::None => 5,
+    //     }
+    // }
 }
 impl Serialize for Timing {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -437,14 +437,13 @@ impl Battle {
         static ERR: &str = "式がおかしいよ";
         let mut is_complete = false; // スキルが全て完了したかのフラグ
         let mut is_attacked = false;
-        let timing = timing.to_i8();
-        let once_skill = (timing == Timing::Win.to_i8()) || (timing == Timing::Lose.to_i8());
+        let once_skill = timing == Timing::Win || timing == Timing::Lose;
         let mut action = Vec::new();
         let mut skill_id: Option<usize> = None;
         // スキルを先頭から検索
         for i in 0..self.character[user].skill.len() {
             // タイミングが同一
-            if self.character[user].skill[i].0.timing.to_i8() == timing {
+            if self.character[user].skill[i].0.timing == timing {
                 // 勝利・敗北時にはそのスキルが一度も発動していないのを確認
                 if once_skill && self.character[user].skill[i].1 {
                     continue;
@@ -590,7 +589,8 @@ impl Battle {
                         // もしスキルが失敗したら、完了フラグを折ってスキルを中断する
                         is_complete = false;
                         break;
-                    } else if let Command::Attack = f {
+                    }
+                    if f == &Command::Attack || f == &Command::MindAttack {
                         // 攻撃コマンドだった場合、攻撃済みフラグを立てる
                         // 本当は攻撃のたびに反応してもいいんだけど、台詞の処理が大変になってしまうので後で1回だけ発動するように
                         is_attacked = true;

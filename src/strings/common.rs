@@ -56,9 +56,8 @@ pub async fn send_webhook(eno: i16, content: String) -> Result<(), String> {
     Ok(())
 }
 
-// 空きスロットを検索してフラグメントを追加
-pub fn add_fragment(conn: &Connection, eno: i16, fragment: &Fragment) -> Result<bool, rusqlite::Error> {
-    // キャラクターの空きスロットを確認
+// キャラクターの空きスロットを確認
+pub fn get_empty_slot(conn: &Connection, eno: i16) -> Result<Option<i8>, rusqlite::Error> {
     let mut stmt = conn
         .prepare("SELECT slot FROM fragment WHERE eno=?1 ORDER BY slot ASC")?;
     let result = stmt
@@ -72,13 +71,22 @@ pub fn add_fragment(conn: &Connection, eno: i16, fragment: &Fragment) -> Result<
             break;
         }
     }
-    Ok(if i <= 30 {
+    if i <= 30 {
+        Ok(Some(i))
+    } else {
+        Ok(None)
+    }
+}
+
+// 空きスロットを検索してフラグメントを追加
+pub fn add_fragment(conn: &Connection, eno: i16, fragment: &Fragment) -> Result<bool, rusqlite::Error> {
+    Ok(if let Some(slot) = get_empty_slot(&conn, eno)? {
         // 追加
         conn.execute(
             "INSERT INTO fragment(eno,slot,category,name,lore,status,skill) VALUES(?1,?2,?3,?4,?5,?6,?7)",
             params![
                 eno,
-                i,
+                slot,
                 fragment.category,
                 fragment.name,
                 fragment.lore,

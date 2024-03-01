@@ -182,6 +182,15 @@
 		>.log,>.search {
 			padding: 8px 4px 8px 8px;
 		}
+		>.log>.update {
+			width: 100%;
+			border-radius: 8px 8px 0 0;
+			justify-content: center;
+			background-color: #767676;
+		}
+		>.log>.update:hover {
+			filter: brightness(1.5);
+		}
 		>.search {
 			>p {
 				display: flex;
@@ -295,6 +304,22 @@
 		>.fragment.changed::before {
 			content: '*' attr(data-slot);
 		}
+		>.fragment>img {
+			display: none;
+			position: absolute;
+			height: 100%;
+			right: 0;
+			top: 0;
+			opacity: 0.6;
+		}
+		>.fragment.trash>img {
+			display: block;
+			content: url('../pic/delete_2_line.svg');
+		}
+		>.fragment.pass>img {
+			display: block;
+			content: url('../pic/gift_line.svg');
+		}
 	}
 	>.header, >.footer {
 		display: grid;
@@ -308,13 +333,16 @@
 		grid-template-columns: 1fr 1fr 1fr;
 	}
 	>.footer {
-		grid-template-columns: 2fr 2fr 1fr 1fr;
+		grid-template-columns: 1fr 1fr 1fr;
 		>p {
 			border: 1px solid #767676;
 			transition: filter 200ms;
 		}
 		>.status::before {
 			content: 'HP: ' attr(data-hp) ', MP: ' attr(data-mp) ', ATK: ' attr(data-atk) ', TEC: ' attr(data-tec);
+		}
+		>.update {
+			grid-column: 2 / -1;
 		}
 		>.update:hover, >.trash:hover {
 			filter: brightness(1.5);
@@ -366,6 +394,26 @@
 			>.effect {
 				width: 30em;
 				overflow-x: auto;
+			}
+		}
+		.footer {
+			grid-column: 1 / -1;
+			justify-content: space-between;
+			img.active {
+				filter: brightness(1.5);
+			}
+			img+label {
+				width: 0;
+				text-wrap: nowrap;
+				overflow: hidden;
+				transition: width 400ms;
+				>input {
+					width: 3em;
+					margin-left: 4px;
+				}
+			}
+			img.active+label {
+				width: 7em;
 			}
 		}
 	}

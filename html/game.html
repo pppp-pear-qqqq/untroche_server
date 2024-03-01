@@ -37,6 +37,7 @@
 			<p class="name"></p>
 			<p class="status"></p>
 			<p class="skill"></p>
+			<img>
 		</div>
 	</template>
 	<template id="template_profile_fragment">
@@ -109,12 +110,9 @@
 			<div id="fragment" class="hide">
 				<div class="header"><p>戦闘用・公開</p><p>公開</p><p>非公開</p></div>
 				<div class="container scroll"></div>
-				<div class="container trash scroll hide"></div>
 				<div class="footer">
 					<p class="status" data-hp="0" data-mp="0" data-atk="0" data-tec="0"></p>
-					<p class="update">更新</p>
-					<p class="trash">廃棄</p>
-					<p class="trade linethrough">譲渡</p>
+					<p class="update" onclick="update_fragments()">更新</p>
 				</div>
 				<div class="desc scroll">
 					<p class="name"></p>
@@ -127,6 +125,14 @@
 						<p class="lore"></p>
 						<p class="timing"></p>
 						<p class="effect"></p>
+					</div>
+					<div class="footer">
+						<a onclick="close_desc()">Close</a>
+						<div>
+							<img src="strings/pic/delete_2_line.svg" width="24" height="24" class="trash">
+							<img src="strings/pic/gift_line.svg" width="24" height="24" class="pass">
+							<label>&gt;&gt;Eno<input type="number" onclick="desc_fragment.dataset.to = this.value"></label>
+						</div>
 					</div>
 				</div>
 			</div>

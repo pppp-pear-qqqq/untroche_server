@@ -302,6 +302,45 @@ pub fn process_line(scene: &str, eno: i16, data: &mut HashMap<String, String>) -
                     content += &scene[nest_start_pos + nest_end_pos..];
                     Ok(process_line(&content, eno, data)?.to_string())
                 }
+                "if" => {
+                    let nest_start_pos = scene.find('{')
+                        .ok_or(script_error("分岐の構文が異常です"))?;
+                    let key = scene[..nest_start_pos].trim();
+                    let (nest, nest_end_pos) = get_nest(&scene[nest_start_pos..])?;
+                    match key {
+                        "lost_name" => {
+                            // データベース接続
+                            let conn = common::open_database()?;
+                            // 名前を取得
+                            let name: Option<String> = match conn.query_row(
+                                "SELECT name FROM fragment WHERE eno=?1 AND category='名前' LIMIT 1",
+                                params![eno],
+                                |row| Ok(row.get(0)?)
+                            ) {
+                                Ok(name) => Some(name),
+                                Err(err) => match err {
+                                    rusqlite::Error::QueryReturnedNoRows => None,
+                                    _ => return Err(ErrorInternalServerError(err)),
+                                }
+                            };
+                            // 名前を取得できたか確認
+                            if let Some(name) = name {
+                                // 名前がある（保存する）
+                                data.insert("name".to_string(), name);
+                                conn.execute("UPDATE scene SET data=?1 WHERE eno=?2", params![
+                                    serde_json::to_string(&data).map_err(|err| ErrorInternalServerError(err))?,
+                                    eno,
+                                ]).map_err(|err| ErrorInternalServerError(err))?;
+                                // ネストの終了地点から
+                                Ok(process_line(&scene[nest_start_pos + nest_end_pos..].trim_start(), eno, data)?.to_string())
+                            } else {
+                                // 名前がない（ネストの中身を処理）
+                                Ok(process_line(&format!("{}{}", nest, &scene[nest_start_pos + nest_end_pos..]), eno, data)?.to_string())
+                            }
+                        }
+                        _ => Err(script_error("定義されていないコマンドです"))
+                    }
+                }
                 _ => Err(script_error("定義されていないコマンドです"))
             }
         }
@@ -339,7 +378,7 @@ pub fn process_line(scene: &str, eno: i16, data: &mut HashMap<String, String>) -
                 // 次のコマンドがある
                 Some(pos) => {
                     conn.execute("UPDATE scene SET buffer='',display=?1,data=?2,data_key='' WHERE eno=?3", params![
-                        &scene[..pos],
+                        &scene[..pos].trim_end(),
                         serde_json::to_string(&data).map_err(|err| ErrorInternalServerError(err))?,
                         eno,
                     ]).map_err(|err| ErrorInternalServerError(err))?;

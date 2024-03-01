@@ -125,17 +125,25 @@ function load_timeline(container, num, start, from, to, location, word) {
 				e.querySelector('.reply').onclick = () => to_chat(i['from'], false, `>>${i['id']}`);
 				return e;
 			}, make_element('<div class="talk"><p class="word">発言がありません</p></div>'), true);
+			const update = document.createElement('div');
+			update.className = 'update';
+			update.innerText = '更新';
+			update.onclick = () => {
+				const params = JSON.parse(select_tab_timeline.dataset.get);
+				load_timeline(document.querySelector('#chat .log'), params['num'], params['start'], params['from'], params['to'], params['location'], params['word']);
+			}
+			container.appendChild(update);
 		}
 	});
 }
-function load_fragments(main_container, trash_container) {
+function load_fragments(container) {
 	ajax.open({
 		url: 'strings/get_fragments',
 		ret: 'json',
 		get: {},
 		ok: ret => {
 			const template = document.getElementById('template_fragment');
-			main_container.replaceChildren();
+			container.replaceChildren();
 			for (let i = 1; i <= 30; ++i) {
 				const f = ret.find(f => f['slot'] == i);
 				const e = template.content.cloneNode(true).querySelector('div');
@@ -223,18 +231,18 @@ function load_fragments(main_container, trash_container) {
 						hold_fragment.classList.add('hold');
 					};
 					e.ontouchstart = event => {
-						hold_fragment = event.currentTarget;
+						// hold_fragment = event.currentTarget;
 						hold_fragment.classList.add('hold');
 					};
 					e.ondragend = () => {
 						hold_fragment.classList.remove('hold');
 						hold_fragment = null;
-						update_status(main_container);
+						update_status(container);
 					};
 					e.ontouchend = () => {
-						hold_fragment.classList.remove('hold');
+						// hold_fragment.classList.remove('hold');
 						hold_fragment = null;
-						update_status(main_container);
+						update_status(container);
 					};
 					e.onclick = open_desc;
 				} else {
@@ -244,16 +252,10 @@ function load_fragments(main_container, trash_container) {
 				e.ontouchmove = event => {
 					event.preventDefault();
 					const pointed = document.elementFromPoint(event.pageX - window.scrollX, event.pageY - window.scrollY);
+					alert(pointed);
 					if(pointed.getAttribute('draggable') && pointed !== hold_fragment) trade_fragment();
 				};
-				main_container.appendChild(e);
-			}
-			trash_container.replaceChildren();
-			for (let i = 1; i <= 30; ++i) {
-				const e = template.content.cloneNode(true).querySelector('div');
-				e.classList.add('none');
-				e.ondragenter = trade_fragment;
-				trash_container.appendChild(e);
+				container.appendChild(e);
 			}
 		}
 	})
@@ -330,7 +332,7 @@ function load_battle_reserve(container) {
 					e.querySelector('.option').innerHTML = `<a onclick="cancel_battle(${i['to'][0]});this.closest('.item').remove()">取り下げる</a>`;
 				} else {
 					e.querySelector('.message').innerHTML = `<a onclick="load_profile(${i['from'][0]});to_profile()">Eno.${i['from'][0]} ${i['from'][1]}</a> に戦闘を挑まれています。`;
-					e.querySelector('.option').innerHTML = `<a onclick="to_chat(${i['from'][0]},true)">話し合う</a><a onclick="receive_battle(${i['from'][0]},1);this.closest('.item').remove()">勝つつもりで挑む</a><a onclick="receive_battle(${i['from'][0]},0);this.closest('.item').remove()">負けるつもりで挑む</a><a onclick="receive_battle(${i['from'][0]},-1);this.closest('.item').remove()">逃げる</a>`;
+					e.querySelector('.option').innerHTML = `<a onclick="to_chat(${i['from'][0]},true)">話し合う</a><a onclick="receive_battle(${i['from'][0]},1);this.closest('.item').remove()">勝つつもりで挑む</a><a onclick="receive_battle(${i['from'][0]},0);this.closest('.item').remove()">負けるつもりで挑む</a><a onclick="receive_battle(${i['from'][0]},255);this.closest('.item').remove()">逃げる</a>`;
 				}
 				return e;
 			});
@@ -639,11 +641,18 @@ function open_desc(event) {
 			desc_skill.querySelector('.timing').innerText = skill.dataset.timing;
 			desc_skill.querySelector('.effect').innerText = skill.dataset.effect;
 		}
+		desc.querySelector('.trash').classList.toggle('active', desc_fragment.classList.contains('trash'));
+		desc.querySelector('.pass').classList.toggle('active', desc_fragment.classList.contains('pass'));
 		desc.classList.add('on');
 	} else {
 		desc_fragment = null;
 		desc.classList.remove('on');
 	}
+}
+function close_desc() {
+	const desc = document.querySelector('#fragment>.desc');
+	desc_fragment = null;
+	desc.classList.remove('on');
 }
 function update_status(list) {
 	let hp = 0;
@@ -665,6 +674,44 @@ function update_status(list) {
 	status.dataset.mp = mp;
 	status.dataset.atk = atk;
 	status.dataset.tec = tec;
+}
+function update_fragments() {
+	let changed = [];
+	let trash = [];
+	let pass = [];
+	const fragments = document.querySelector('#fragment .container');
+	fragments.querySelectorAll('.changed:not(.trash)').forEach(elem => {
+		const skill = elem.querySelector('.skill');
+		changed.push({
+			prev: Number(elem.dataset.slot),
+			next: [].slice.call(fragments.children).indexOf(elem) + 1,
+			skill_name: skill.dataset.name,
+			skill_word: skill.dataset.word,
+		});
+	});
+	fragments.querySelectorAll('.trash').forEach(elem => trash.push(Number(elem.dataset.slot)));
+	let exit = false;
+	fragments.querySelectorAll('.pass').forEach(elem => {
+		if (isNaN(elem.dataset.to)) {
+			alertify.error('送り先が指定されていません');
+			exit = true;
+		}
+		pass.push({
+			slot: Number(elem.dataset.slot),
+			to: Number(elem.dataset.to),
+		});
+	});
+	if (exit) return;
+	ajax.open({
+		url: 'strings/update_fragments',
+		ret: 'text',
+		post: {change: changed, trash: trash, pass: pass},
+		ok: ret => {
+			alertify.success(ret);
+			close_desc();
+			load_fragments(fragments);
+		}
+	})
 }
 
 // プロフィール
@@ -719,6 +766,7 @@ function receive_battle(from, plan) {
 				alertify.success(ret['content']);
 			} else {
 				battle = new Battle(ret[0]);
+				console.log(ret[1]);
 				if (ret[0]['result'] === 'right') {
 					alertify.success(`フラグメント『${ret[1]['name']}』を獲得しました`);
 				} else if (ret[0]['result'] === 'left') {
@@ -825,64 +873,31 @@ window.addEventListener('load', async () => {
 			}
 		}
 	});
-	{
-		const trash_tab = document.querySelector('#fragment>.footer>.trash');
-		trash_tab.ondragover = event => event.preventDefault();
-		trash_tab.ondrop = event => {
-			event.preventDefault();
-			if (hold_fragment !== null) {
-				const container = [
-					document.querySelector('#fragment>.container'),
-					document.querySelector('#fragment>.container.trash'),
-				];
-				const t = event.currentTarget.classList.contains('open');
-				const trade = container[t?0:1].querySelector('.fragment.none');
-				if (trade !== null) {
-					const next = trade.nextElementSibling;
-					container[t?1:0].insertBefore(trade, hold_fragment);
-					container[t?0:1].insertBefore(hold_fragment, next);
-				} else alertify.error('これ以上移動させられません');
-				hold_fragment.classList.add('changed');
-			}
-		}
-		trash_tab.onclick = event => {
-			const e = event.currentTarget;
-			const container = [
-				document.querySelector('#fragment>.container'),
-				document.querySelector('#fragment>.container.trash'),
-			];
-			e.classList.toggle('open');
-			t = e.classList.contains('open');
-			container[t?0:1].classList.add('hide');
-			container[t?1:0].classList.remove('hide');
-		}
-	}
-	document.querySelector('#fragment>.footer>.update').onclick = () => {
-		let changed = [];
-		let trash = [];
-		const fragments = document.querySelector('#fragment');
-		const main_container = fragments.querySelector('.container');
-		const trash_container = fragments.querySelector('.container.trash');
-		main_container.querySelectorAll('.changed').forEach(elem => {
-			const skill = elem.querySelector('.skill');
-			changed.push({
-				prev: Number(elem.dataset.slot),
-				next: [].slice.call(main_container.children).indexOf(elem) + 1,
-				skill_name: skill.dataset.name,
-				skill_word: skill.dataset.word,
+	const buttons = document.querySelectorAll('#fragment>.desc img');
+	buttons.forEach(e => {
+		e.onclick = () => {
+			e.classList.toggle('active');
+			buttons.forEach(x => {
+				if (e !== x) {
+					x.classList.remove('active');
+				}
 			});
-		});
-		trash_container.querySelectorAll('.changed').forEach(elem => trash.push(Number(elem.dataset.slot)));
-		ajax.open({
-			url: 'strings/update_fragments',
-			ret: 'text',
-			post: {change: changed, trash: trash},
-			ok: ret => {
-				alertify.success(ret);
-				load_fragments(main_container, trash_container);
+			if (e.classList.contains('active')) {
+				if (e.classList.contains('trash')) {
+					desc_fragment.classList.add('trash');
+					desc_fragment.classList.remove('pass');
+				} else if (e.classList.contains('pass')) {
+					desc_fragment.classList.add('pass');
+					desc_fragment.classList.remove('trash');
+				}
+			} else {
+				if (e.classList.contains('trash'))
+					desc_fragment.classList.remove('trash');
+				else if (e.classList.contains('pass'))
+					desc_fragment.classList.remove('pass');
 			}
-		})
-	}
+		}
+	});
 
 	// プロフィール更新機能
 	document.querySelectorAll('#profile>div>.text').forEach(elem => {
@@ -941,7 +956,7 @@ window.addEventListener('load', async () => {
 	load_characters(document.querySelector('#other .characters'), 1000, null, '*');
 
 	// フラグメント
-	load_fragments(document.querySelector('#fragment .container'), document.querySelector('#fragment .container.trash'));
+	load_fragments(document.querySelector('#fragment .container'));
 	setTimeout(update_status,1000,document.querySelector('#fragment .container'));
 
 	// 戦闘

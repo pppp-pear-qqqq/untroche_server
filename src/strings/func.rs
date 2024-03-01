@@ -2,7 +2,7 @@ use std::{collections::hash_map::DefaultHasher, hash::{Hash, Hasher}, i128};
 
 use actix_rt;
 use actix_web::{error::{ErrorBadRequest, ErrorInternalServerError}, HttpRequest, web};
-use rusqlite::{named_params, params, types::Type};
+use rusqlite::{named_params, params, types::Type, Connection};
 use serde::{Deserialize, Serialize};
 use unicode_segmentation::UnicodeSegmentation;
 use uuid::Uuid;
@@ -400,9 +400,15 @@ struct MoveFragmentData {
     skill_word: Option<String>,
 }
 #[derive(Deserialize)]
+struct PassFragmentData {
+    slot: i8,
+    to: i16,
+}
+#[derive(Deserialize)]
 pub(super) struct UpdateFragmentsData {
     change: Vec<MoveFragmentData>,
     trash: Vec<i8>,
+    pass: Vec<PassFragmentData>,
 }
 struct UpdateFragment {
     slot: i8,
@@ -420,8 +426,17 @@ pub(super) async fn update_fragments(req: HttpRequest, info: web::Json<UpdateFra
     let conn = common::open_database()?;
     // Enoを取得
     let eno = common::session_to_eno(&conn, session.value())?;
+    // 譲渡
+    for i in &info.pass {
+        // 取得者のスロットに空きがある場合
+        if let Some(slot) = common::get_empty_slot(&conn, i.to)
+            .map_err(|err| ErrorInternalServerError(err))? {
+            // フラグメントの移動
+            conn.execute("UPDATE fragment SET eno=?1,slot=?2 WHERE eno=?3 AND slot=?4", params![i.to, slot, eno, i.slot])
+                .map_err(|err| ErrorInternalServerError(err))?;
+        }
+    }
     // フラグメントの一覧を取得
-    // SQLの時点で精査するのが面倒なので、とりあえず全部取得する
     let result = || -> Result<_, rusqlite::Error> {
         let mut stmt = conn.prepare("SELECT slot,category,name,lore,status,skill FROM fragment WHERE eno=?1")?;
         let result = stmt.query_map(params![eno], |row| {
@@ -436,54 +451,67 @@ pub(super) async fn update_fragments(req: HttpRequest, info: web::Json<UpdateFra
         })?.collect::<Result<Vec<_>, _>>()?;
         Ok(result)
     }().map_err(|err| ErrorInternalServerError(err))?;
-    // 廃棄するものの得点付け、および一旦削除するもののリストアップ
-    let mut kins = 0;
-    let mut delete_list: Vec<&i8> = Vec::new();
-    for x in &result {
-        if info.trash.contains(&x.slot) {
-            kins += common::calc_fragment_kins(x.status);
-            delete_list.push(&x.slot);
-        } else if info.change.iter().any(|y| y.prev == x.slot) {
-            delete_list.push(&x.slot);
-        }
-    }
-    // 削除のためのSQL文作成
+    // 削除
     let mut sql = "DELETE FROM fragment WHERE eno=?1 AND slot IN (".to_string();
     let mut params = params![eno].to_vec();
-    let mut i = 2i8;
-    for v in delete_list {
-        sql += &format!("{}?{}", if i > 2 {","} else {""}, i);
-        i += 1;
-        params.push(v);
+    let mut n = 2i8;
+    // 廃棄するものの得点付け・SQL文構成
+    let mut kins = 0;
+    for i in &info.trash {
+        if let Some(x) = result.iter().find(|&x| &x.slot == i) {
+            kins += common::calc_fragment_kins(x.status);
+            if n > 2 {
+                sql += ",";
+            }
+            sql += &format!("?{}", n);
+            n += 1;
+            params.push(i);
+        }
     }
     sql += ")";
-    // 削除
     conn.execute(&sql, params.as_slice()).map_err(|err| ErrorInternalServerError(err))?;
     // キンス反映
     if kins != 0 {
         conn.execute("UPDATE character SET kins=kins+?1 WHERE eno=?2", params![kins, eno])
             .map_err(|err| ErrorInternalServerError(err))?;
     }
-    // 更新反映
-    // SQL文とバインドの対応を構築するのが本当に難しかったので、一旦ひとつずつINSERTしていく形にする
-    for x in &info.change {
-        if let Some(y) = result.iter().find(|y| y.slot == x.prev) {
-            conn.execute(
+    // 移動・更新
+    // 削除
+    let mut sql = "DELETE FROM fragment WHERE eno=?1 AND slot IN (".to_string();
+    let mut params = params![eno].to_vec();
+    let mut n = 2i8;
+    for i in &info.change {
+        if n > 2 {
+            sql += ",";
+        }
+        sql += &format!("?{}", n);
+        n += 1;
+        params.push(&i.prev);
+    }
+    sql += ")";
+    conn.execute(&sql, params.as_slice()).map_err(|err| ErrorInternalServerError(err))?;
+    for i in &info.change {
+        let mut errs = Vec::new();
+        if let Some(x) = result.iter().find(|&x| x.slot == i.prev) {
+            if let Err(err) = conn.execute(
                 "INSERT INTO fragment VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)",
                 params![
                     eno,
-                    x.next,
-                    y.category,
-                    y.name,
-                    y.lore,
-                    y.status,
-                    y.skill,
-                    x.skill_name,
-                    x.skill_word,
+                    i.next,
+                    x.category,
+                    x.name,
+                    x.lore,
+                    x.status,
+                    x.skill,
+                    i.skill_name,
+                    i.skill_word,
                 ],
-            ).map_err(|err| ErrorInternalServerError(err))?;
-        } else {
-            return Err(ErrorInternalServerError("存在しないフラグメントを変更しようとしました"));
+            ) {
+                errs.push(err);
+            }
+        }
+        if !errs.is_empty() {
+            return Err(ErrorInternalServerError(errs.iter().map(|x| x.to_string()).collect::<Vec<String>>().join("\n")));
         }
     }
     Ok("フラグメントを更新しました".to_string())
@@ -773,74 +801,26 @@ pub(super) async fn receive_battle(req: HttpRequest, info: web::Json<ReceiveBatt
                     ]
                 ).map_err(|err| ErrorInternalServerError(err))?;
                 // フラグメント移動
-                let name = if let Some((win, lose)) = match log.result.as_str() {
-                    "left" => Some((info.from, eno)),
-                    "right" => Some((eno, info.from)),
+                let name = match log.result.as_str() {
+                    "left" => take_fragment(&conn, info.from, eno).map_err(|err| ErrorInternalServerError(err))?,
+                    "right" => take_fragment(&conn, eno, info.from).map_err(|err| ErrorInternalServerError(err))?,
                     _ => None,
-                } {
-                    let mut stmt = conn.prepare("SELECT slot,category,name,lore,status,skill FROM fragment WHERE eno=?1")
-                        .map_err(|err| ErrorInternalServerError(err))?;
-                    // 候補の取得
-                    let result = stmt.query_map(params![lose], |row| {
-                        Ok(UpdateFragment{
-                            slot: row.get(0)?,
-                            category: row.get(1)?,
-                            name: row.get(2)?,
-                            lore: row.get(3)?,
-                            status: row.get(4)?,
-                            skill: row.get(5)?,
-                        })
-                    }).map_err(|err| ErrorInternalServerError(err))?
-                        .collect::<Result<Vec<_>, _>>()
-                        .map_err(|err| ErrorInternalServerError(err))?;
-                    // 移動対象を決定
-                    let t = result.get(rand::random::<usize>() % result.len())
-                        .ok_or(ErrorInternalServerError("フラグメントの移動に失敗しました"))?;
-                    // 勝利者にフラグメントを追加
-                    common::add_fragment(&conn, win, &common::Fragment::new(t.category.to_owned(), t.name.to_owned(), t.lore.to_owned(), t.status, t.skill))
-                        .map_err(|err| ErrorInternalServerError(err))?;
-                    // フラグメントの削除
-                    conn.execute("DELETE FROM fragment WHERE eno=?1 AND slot=?2", params![lose, t.slot])
-                        .map_err(|err| ErrorInternalServerError(err))?;
-                    t.name.clone()
-                } else { String::new() };
+                };
                 let _ = handle.await;
                 // 戦闘ログを返す
-                Ok(format!("[{},{{\"name\":\"{}\"}}]", log_json, name))
+                Ok(format!("[{},{{\"name\":\"{}\"}}]", log_json, name.unwrap_or(String::new())))
             } else {
                 // 戦闘処理を省略して勝敗決定
                 // 攻撃者に連絡
                 let handle = actix_rt::spawn(common::send_webhook(info.from, format!("Eno.{} との戦闘が省略され、{}しました。", eno, if plan != 0 { "勝利" } else { "敗北" })));
                 // フラグメント移動
-                let (win, lose) = if plan == 0 {
-                    (info.from, eno)
+                if plan == 0 {
+                    take_fragment(&conn, eno, info.from)
+                        .map_err(|err| ErrorInternalServerError(err))?;
                 } else {
-                    (eno, info.from)
+                    take_fragment(&conn, info.from, eno)
+                        .map_err(|err| ErrorInternalServerError(err))?;
                 };
-                let mut stmt = conn.prepare("SELECT slot,category,name,lore,status,skill FROM fragment WHERE eno=?1")
-                    .map_err(|err| ErrorInternalServerError(err))?;
-                // 候補の取得
-                let result = stmt.query_map(params![lose], |row| {
-                    Ok(UpdateFragment{
-                        slot: row.get(0)?,
-                        category: row.get(1)?,
-                        name: row.get(2)?,
-                        lore: row.get(3)?,
-                        status: row.get(4)?,
-                        skill: row.get(5)?,
-                    })
-                }).map_err(|err| ErrorInternalServerError(err))?
-                    .collect::<Result<Vec<_>, _>>()
-                    .map_err(|err| ErrorInternalServerError(err))?;
-                // 移動対象を決定
-                let t = result.get(rand::random::<usize>() % result.len())
-                    .ok_or(ErrorInternalServerError("フラグメントの移動に失敗しました"))?;
-                // 勝利者にフラグメントを追加
-                common::add_fragment(&conn, win, &common::Fragment::new(t.category.to_owned(), t.name.to_owned(), t.lore.to_owned(), t.status, t.skill))
-                    .map_err(|err| ErrorInternalServerError(err))?;
-                // フラグメントの削除
-                conn.execute("DELETE FROM fragment WHERE eno=?1 AND slot=?2", params![lose, t.slot])
-                    .map_err(|err| ErrorInternalServerError(err))?;
                 let _ = handle.await;
                 // 被攻撃者に連絡
                 Ok(format!("{{\"result\":\"omission\",\"content\":\"Eno.{} との戦闘が省略され、{}しました\"}}", info.from, if info.plan != 0 { "勝利" } else { "敗北" }))
@@ -855,6 +835,40 @@ pub(super) async fn receive_battle(req: HttpRequest, info: web::Json<ReceiveBatt
             // 被攻撃者に連絡
             Ok(format!("{{\"result\":\"omission\",\"content\":\"Eno.{} との戦闘から逃走しました\"}}", info.from))
         }
+    }
+}
+
+fn take_fragment(conn: &Connection, win: i16, lose: i16) -> Result<Option<String>, rusqlite::Error> {
+    let mut stmt = conn.prepare("SELECT slot,category,name,lore,status,skill FROM fragment WHERE eno=?1 AND slot<=20")?;
+    // 候補の取得
+    let result = stmt.query_map(params![lose], |row| {
+        Ok(UpdateFragment{
+            slot: row.get(0)?,
+            category: row.get(1)?,
+            name: row.get(2)?,
+            lore: row.get(3)?,
+            status: row.get(4)?,
+            skill: row.get(5)?,
+        })
+    })?.collect::<Result<Vec<_>, _>>()?;
+    // 移動対象を決定
+    let buf = &result[rand::random::<usize>() % result.len()];
+    let t = {
+        if buf.category == "名前" {
+            if let Some(doll) = result.iter().find(|&x| x.category == "身代わり") {
+                doll
+            } else {
+                buf
+            }
+        } else { buf }
+    };
+    // 勝利者のスロットに空きがある場合
+    if let Some(slot) = common::get_empty_slot(&conn, win)? {
+        // フラグメントの移動
+        conn.execute("UPDATE fragment SET eno=?1,slot=?2 WHERE eno=?3 AND slot=?4", params![win, slot, lose, t.slot])?;
+        Ok(Some(t.name.clone()))
+    } else {
+        Ok(None)
     }
 }
 
