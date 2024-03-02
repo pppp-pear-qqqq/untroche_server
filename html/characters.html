@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width,initial-scale=1">
+	<title>"Strings".characters</title>
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;800&display=swap">
+	<link rel="stylesheet" type="text/css" href="css/style.css">
+	<link rel="stylesheet" type="text/css" href="css/game.css">
+	<link rel="stylesheet" type="text/css" href="api/css/alertify.min.css">
+	<script src="api/alertify.min.js"></script>
+	<script src="js/cookie.class.js"></script>
+	<script src="js/ajax.class.js"></script>
+	<script src="js/common.js"></script>
+	<script src="js/characters.js"></script>
+</head>
+<template id="template_character">
+	<div class="character">
+		<p class="eno"></p><p class="acronym"></p><p class="name"></p>
+		<p class="word"></p>
+	</div>
+</template>
+<template id="template_fragment">
+	<div class="fragment">
+		<p class="name"></p><p class="category"></p>
+		<p class="lore"></p>
+	</div>
+</template>
+<body class="back scroll">
+	<div id="main">
+		<div id="location">
+			<div class="characters scroll"></div>
+		</div>
+		<div id="profile" class="hide">
+			<h4><a onclick="close_profile()">Close</a></h4>
+			<div class="scroll">
+				<div class="data"><span class="eno"></span><span class="acronym right"></span><input type="color" class="color" disabled></div>
+				<p class="fullname"></p>
+				<h4>Comment.</h4>
+				<input type="text" class="comment" disabled>
+				<h4>Fragments.</h4>
+				<div class="fragments"></div>
+				<h4>Profile.</h4>
+				<div class="text profile"><p></p></div>
+				<h4>Memo.</h4>
+				<div class="text memo"><p></p></div>
+			</div>
+		</div>
+	</div>
+</body>

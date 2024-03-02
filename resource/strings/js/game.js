@@ -1,5 +1,13 @@
 var hold_fragment = null;
 var desc_fragment = null;
+var fomula_type = (() => {
+	const f = localStorage.getItem('fomula_type');
+	if (f === null) {
+		localStorage.setItem('fomula_type', 0);
+		return 0;
+	}
+	else return Number(f);
+})();
 var explore_text = [];
 var explore_selectable = false;
 var explore_ok = true;
@@ -112,17 +120,19 @@ function load_timeline(container, num, start, from, to, location, word) {
 					to.classList.remove('hide');
 				}
 				const location = e.querySelector('.location');
-				if (i['location'] === null)
+				let lock = false;
+				if (i['location'] === null) {
 					location.innerHTML = '<img src="strings/pic/lock_fill.svg" width="21" height="21">';
-				else
-					location.innerText = i['location'];
+					lock = true;
+				}
+				else location.innerText = i['location'];
 				e.querySelector('.name').innerText = i['name'];
 				e.querySelector('.eno').innerText = `Eno.${i['from']}`;
 				e.querySelector('.id').innerText = `id:${i['id']}`;
 				e.querySelector('.timestamp').innerText = i['timestamp'];
 				e.querySelector('.word').innerHTML = i['word'];
 				e.querySelector('.talk').style.borderColor = `#${array_to_colorcode(i['color'])}`;
-				e.querySelector('.reply').onclick = () => to_chat(i['from'], false, `>>${i['id']}`);
+				e.querySelector('.reply').onclick = () => to_chat(i['from'], lock, `>>${i['id']}`);
 				return e;
 			}, make_element('<div class="talk"><p class="word">発言がありません</p></div>'), true);
 			const update = document.createElement('div');
@@ -166,63 +176,7 @@ function load_fragments(container) {
 						s.dataset.word = f['skill']['word'];
 						s.dataset.lore = f['skill']['lore'];
 						s.dataset.timing = f['skill']['timing'];
-						let stack = [];
-						let effect = [];
-						f['skill']['effect'].forEach(e => {
-							switch (e) {
-								case '正': {
-									stack.push(`+${stack.pop()}`);
-								} break;
-								case '負': {
-									stack.push(`-${stack.pop()}`);
-								} break;
-								case '+': {
-									stack.push(`${stack.pop()} + ${stack.pop()}`);
-								} break;
-								case '-': {
-									stack.push(`${stack.pop()} - ${stack.pop()}`);
-								} break;
-								case '*': {
-									stack.push(`${stack.pop()} * ${stack.pop()}`);
-								} break;
-								case '/': {
-									stack.push(`${stack.pop()} / ${stack.pop()}`);
-								} break;
-								case '%': {
-									stack.push(`${stack.pop()} % ${stack.pop()}`);
-								} break;
-								case '~': {
-									stack.push(`${stack.pop()} ~ ${stack.pop()}`);
-								} break;
-								case '消耗':
-								case '強命消耗':
-								case '確率':
-								case '攻撃':
-								case '貫通攻撃':
-								case '精神攻撃':
-								case '回復':
-								case '自傷':
-								case '集中':
-								case 'ATK変化':
-								case 'TEC変化':
-								case '移動':
-								case '間合変更':
-								case '逃走ライン': {
-									effect.push(`${e}(${stack.pop()})`);
-								} break;
-								case '間合': {
-									effect.push(`${e}(${stack.pop()}, ${stack.pop()})`);
-								} break;
-								case '中断':
-								case '対象変更': {
-									effect.push(e);
-								} break;
-								default: {
-									stack.push(e);
-								}
-							}
-						});
-						s.dataset.effect = effect.join(', ');
+						s.dataset.effect = f['skill']['effect'].join(' ');
 					} else {
 						s.classList.add('none');
 					}
@@ -231,8 +185,7 @@ function load_fragments(container) {
 						hold_fragment.classList.add('hold');
 					};
 					e.ontouchstart = event => {
-						// hold_fragment = event.currentTarget;
-						hold_fragment.classList.add('hold');
+						hold_fragment = event.currentTarget;
 					};
 					e.ondragend = () => {
 						hold_fragment.classList.remove('hold');
@@ -240,21 +193,22 @@ function load_fragments(container) {
 						update_status(container);
 					};
 					e.ontouchend = () => {
-						// hold_fragment.classList.remove('hold');
 						hold_fragment = null;
 						update_status(container);
 					};
 					e.onclick = open_desc;
+					e.ontouchmove = event => {
+						event.preventDefault();
+						for (let i = 0; i < event.changedTouches.length; ++i) {
+							const touch = event.changedTouches[i];
+							const pointed = document.elementsFromPoint(touch.clientX, touch.clientY).find((e) => e.classList.contains('fragment'));
+							if (pointed !== undefined) trade_fragment(pointed);
+						}
+					};
 				} else {
 					e.classList.add('none');
 				}
-				e.ondragenter = trade_fragment;
-				e.ontouchmove = event => {
-					event.preventDefault();
-					const pointed = document.elementFromPoint(event.pageX - window.scrollX, event.pageY - window.scrollY);
-					alert(pointed);
-					if(pointed.getAttribute('draggable') && pointed !== hold_fragment) trade_fragment();
-				};
+				e.ondragenter = event => trade_fragment(event.currentTarget);
 				container.appendChild(e);
 			}
 		}
@@ -601,8 +555,7 @@ function select_chat_tab(event) {
 }
 
 // フラグメント
-function trade_fragment(event) {
-	const target = event.currentTarget;
+function trade_fragment(target) {
 	if (hold_fragment !== null && target !== hold_fragment) {
 		const next = target.nextElementSibling;
 		const parent = hold_fragment.parentNode;
@@ -639,7 +592,19 @@ function open_desc(event) {
 			desc_skill.querySelector('.word').value = skill.dataset.word;
 			desc_skill.querySelector('.lore').innerHTML = skill.dataset.lore;
 			desc_skill.querySelector('.timing').innerText = skill.dataset.timing;
-			desc_skill.querySelector('.effect').innerText = skill.dataset.effect;
+			const effect = desc_skill.querySelector('.effect');
+			switch (fomula_type) {
+				case 0: effect.innerText = make_skillfomula(skill.dataset.effect.split(' ')); break;
+				case 1: effect.innerText = skill.dataset.effect; break;
+			}
+			effect.onclick = event => {
+				fomula_type ^= 1;
+				localStorage.setItem('fomula_type', fomula_type);
+				switch (fomula_type) {
+					case 0: event.currentTarget.innerText = make_skillfomula(skill.dataset.effect.split(' ')); break;
+					case 1: event.currentTarget.innerText = skill.dataset.effect; break;
+				}
+			}
 		}
 		desc.querySelector('.trash').classList.toggle('active', desc_fragment.classList.contains('trash'));
 		desc.querySelector('.pass').classList.toggle('active', desc_fragment.classList.contains('pass'));

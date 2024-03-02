@@ -147,7 +147,7 @@ body {
 	top: 0;
 	left: 0;
 	z-index: -1;
-	font-size: 6vw;
+	font-size: 6vmax;
 	line-height: 1.2;
 	color: #0000;
 	text-shadow: 0 0 12px #ffffff0c;

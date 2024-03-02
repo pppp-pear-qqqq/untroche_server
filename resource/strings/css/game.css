@@ -117,9 +117,9 @@
 		}
 	}
 	>.characters {
+		padding: 8px 4px 8px 8px;
 		flex-grow: 1;
 		flex-basis: 0;
-		padding: 8px 4px 8px 8px;
 		flex-direction: column;
 		overflow-y: auto;
 		gap: 10px;
@@ -137,6 +137,7 @@
 		>.log {
 			flex-direction: column;
 			gap: 4px;
+			user-select: none;
 			>p {
 				width: 30em;
 			}
@@ -240,13 +241,16 @@
 	background-color: #40404022;
 	>.name {
 		height: 1lh;
-		text-overflow: ellipsis;
 		overflow: hidden;
+		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
 	>.status, >.skill {
 		height: 1lh;
 		font-size: 80%;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 }
 .fragment:not(.none)>.status::before {
@@ -343,6 +347,7 @@
 		}
 		>.update {
 			grid-column: 2 / -1;
+			user-select: none;
 		}
 		>.update:hover, >.trash:hover {
 			filter: brightness(1.5);
@@ -394,6 +399,8 @@
 			>.effect {
 				width: 30em;
 				overflow-x: auto;
+				user-select: none;
+				cursor: pointer;
 			}
 		}
 		.footer {
@@ -404,8 +411,8 @@
 			}
 			img+label {
 				width: 0;
-				text-wrap: nowrap;
 				overflow: hidden;
+				white-space: nowrap;
 				transition: width 400ms;
 				>input {
 					width: 3em;
@@ -601,6 +608,7 @@
 		flex-basis: 0;
 		flex-direction: column;
 		overflow-y: auto;
+		gap: 10px;
 		>.character {
 			>.footer {
 				display: none;

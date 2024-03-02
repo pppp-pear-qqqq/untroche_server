@@ -24,6 +24,7 @@ pub fn config(cfg: &mut web::ServiceConfig) {
     cfg.service(web::scope("/strings")
 		.route("", web::get().to(index))
 		.route("/rulebook", web::get().to(rulebook))
+		.route("/characters", web::get().to(characters))
 		.route("/register", web::post().to(func::register))
 		.route("/login", web::post().to(func::login))
 		.route("/send_chat", web::post().to(func::send_chat))
@@ -119,6 +120,10 @@ async fn index(req: HttpRequest) -> Result<HttpResponse, actix_web::Error> {
 async fn rulebook() -> HttpResponse {
     HttpResponse::Ok()
         .body(fs::read_to_string("html/rulebook.html").unwrap())
+}
+async fn characters() -> HttpResponse {
+    HttpResponse::Ok()
+        .body(fs::read_to_string("html/characters.html").unwrap())
 }
 
 #[allow(dead_code)]

@@ -26,7 +26,10 @@ pub(super) async fn login(info: web::Json<LoginData>) -> Result<String, actix_we
         "SELECT eno FROM user WHERE eno=?1 AND password=?2",
         params![info.eno, hasher.finish() as i64],
         |row| row.get::<usize, i16>(0),
-    ).map_err(|err| ErrorBadRequest(err))?;
+    ).map_err(|err| match err {
+        rusqlite::Error::QueryReturnedNoRows => ErrorBadRequest("Enoまたはパスワードが違います"),
+        _ => ErrorBadRequest(err)
+    })?;
     // ログインセッションを生成
     let login_session = Uuid::new_v4().as_u128() as i128;
     // println!("login: {},{}", login_session, eno);
@@ -430,7 +433,8 @@ pub(super) async fn update_fragments(req: HttpRequest, info: web::Json<UpdateFra
     for i in &info.pass {
         // 取得者のスロットに空きがある場合
         if let Some(slot) = common::get_empty_slot(&conn, i.to)
-            .map_err(|err| ErrorInternalServerError(err))? {
+            .map_err(|err| ErrorInternalServerError(err))?
+        {
             // フラグメントの移動
             conn.execute("UPDATE fragment SET eno=?1,slot=?2 WHERE eno=?3 AND slot=?4", params![i.to, slot, eno, i.slot])
                 .map_err(|err| ErrorInternalServerError(err))?;

@@ -27,6 +27,42 @@ function add_decoration_tag(pre, post) {
 	}
 }
 
+function make_skillfomula(array) {
+	let stack = [];
+	let effect = [];
+	array.forEach(e => {
+		switch (e) {
+			case '正': stack.push(`+${stack.pop()}`); break;
+			case '負': stack.push(`-${stack.pop()}`); break;
+			case '+': stack.push(`${stack.pop()} + ${stack.pop()}`); break;
+			case '-': stack.push(`${stack.pop()} - ${stack.pop()}`); break;
+			case '*': stack.push(`${stack.pop()} * ${stack.pop()}`); break;
+			case '/': stack.push(`${stack.pop()} / ${stack.pop()}`); break;
+			case '%': stack.push(`${stack.pop()} % ${stack.pop()}`); break;
+			case '~': stack.push(`${stack.pop()} ~ ${stack.pop()}`); break;
+			case '消耗':
+			case '強命消耗':
+			case '確率':
+			case '攻撃':
+			case '貫通攻撃':
+			case '精神攻撃':
+			case '回復':
+			case '自傷':
+			case '集中':
+			case 'ATK変化':
+			case 'TEC変化':
+			case '移動':
+			case '間合変更':
+			case '逃走ライン': effect.push(`${e}(${stack.pop()})`); break;
+			case '間合': effect.push(`${e}(${stack.pop()}, ${stack.pop()})`); break;
+			case '中断':
+			case '対象変更': effect.push(e); break;
+			default: stack.push(e);
+		}
+	});
+	return effect.join(', ');
+}
+
 function array_to_colorcode(arg) {
 	return `${arg[0].toString(16).padStart(2,'0')}${arg[1].toString(16).padStart(2,'0')}${arg[2].toString(16).padStart(2, '0')}`
 }
