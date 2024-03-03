@@ -66,10 +66,11 @@ pub fn get_empty_slot(conn: &Connection, eno: i16) -> Result<Option<i8>, rusqlit
     if result.is_empty() {
         return Err(rusqlite::Error::QueryReturnedNoRows);
     }
-    let mut i = 0;
+    let mut i = 1;
     for slot in result {
-        i += 1;
-        if i != slot {
+        if i == slot {
+            i += 1;
+        } else {
             break;
         }
     }

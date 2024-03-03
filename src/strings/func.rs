@@ -511,12 +511,10 @@ pub(super) async fn update_fragments(req: HttpRequest, info: web::Json<UpdateFra
                             slot = s;
                         }
                         // 空きがない、または対象が存在しない
-                        Ok(None) | Err(rusqlite::Error::QueryReturnedNoRows) => (),
+                        Ok(None) | Err(rusqlite::Error::QueryReturnedNoRows) => result_update_fragments.pass_error.push(f.name.clone()),
                         // エラー
                         Err(err) => return Err(ErrorInternalServerError(err)),
                     }
-                    // koko
-                    result_update_fragments.pass_error.push(f.name.clone());
                 }
                 // 新しいフラグメントを追加
                 conn.execute("INSERT INTO fragment VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)",
