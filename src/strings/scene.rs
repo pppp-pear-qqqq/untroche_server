@@ -101,7 +101,7 @@ pub fn process_line(scene: &str, eno: i16, data: &mut HashMap<String, String>) -
         Some('!') => {
             let command_end_pos = scene[1..].find(&[' ', '\n']);
             let (command, scene) = if let Some(pos) = command_end_pos {
-                (&scene[1..pos + 1], &scene[pos + 2..])
+                (scene[1..pos + 1].trim_end(), &scene[pos + 2..])
             } else {
                 (&scene[1..], "")
             };
@@ -118,7 +118,7 @@ pub fn process_line(scene: &str, eno: i16, data: &mut HashMap<String, String>) -
                         eno,
                     ]).map_err(|err| ErrorInternalServerError(err))?;
                     // 終了
-                    Ok("".to_string())
+                    Ok(String::new())
                 }
                 // ロケーションを変更
                 "location" => {
@@ -135,10 +135,10 @@ pub fn process_line(scene: &str, eno: i16, data: &mut HashMap<String, String>) -
                         .map_err(|err| ErrorInternalServerError(err))?;
                     // まだシーンが終了していなければ継続
                     if let Some(pos) = option_end_pos {
-                        process_line(scene[pos..].trim_start(), eno, data)
+                        process_line(&scene[pos..], eno, data)
                     } else {
                         // 終了
-                        Ok("".to_string())
+                        Ok(String::new())
                     }
                 }
                 // フラグメントを獲得
@@ -218,7 +218,7 @@ pub fn process_line(scene: &str, eno: i16, data: &mut HashMap<String, String>) -
                         Ok(format!("\n──フラグメント『{}』を入手しました{}", fragment.name, if get {""} else {"<br>──所持数制限により破棄されました"}) + &process_line(&scene[pos..], eno, data)?)
                     } else {
                         // 終了
-                        Ok("".to_string())
+                        Ok(String::new())
                     }
                 }
                 //  キンス変化
@@ -256,8 +256,46 @@ pub fn process_line(scene: &str, eno: i16, data: &mut HashMap<String, String>) -
                         Ok(format!("\n──{}キンスを{}", value.abs(), if value < 0 {"支払いました"} else {"入手しました"}) + &process_line(&scene[pos..], eno, data)?)
                     } else {
                         // 終了
-                        Ok("".to_string())
+                        Ok(String::new())
                     }
+                }
+                // 変数設定
+                "var" => {
+                    let (option, option_end_pos) = get_option(scene);
+                    // 値を取得
+                    let data_key = option.get(0)
+                        .ok_or(script_error("変数が指定されていません"))?;
+                    if let Some(value) = option.get(1) {
+                        // データを保存
+                        data.insert(data_key.to_string(), value.to_string());
+                    } else {
+                        // データを削除
+                        data.remove(&data_key.to_string());
+                    }
+                    // データベース接続
+                    let conn = common::open_database()?;
+                    // データベース側にも保存
+                    conn.execute("UPDATE scene SET data=?1 WHERE eno=?2", params![
+                        serde_json::to_string(&data).map_err(|err| ErrorInternalServerError(err))?,
+                        eno,
+                    ]).map_err(|err| ErrorInternalServerError(err))?;
+                    // まだシーンが終了していなければ継続
+                    if let Some(pos) = option_end_pos {
+                        process_line(&scene[pos..], eno, data)
+                    } else {
+                        // 終了
+                        Ok(String::new())
+                    }
+                }
+                // 終了
+                "return" => {
+                    let conn = common::open_database()?;
+                    conn.execute("UPDATE scene SET buffer='',display=?1,data=?2,data_key='' WHERE eno=?3", params![
+                        scene,
+                        serde_json::to_string(&data).map_err(|err| ErrorInternalServerError(err))?,
+                        eno,
+                    ]).map_err(|err| ErrorInternalServerError(err))?;
+                    Ok(String::new())
                 }
                 // 分岐
                 "match" => {

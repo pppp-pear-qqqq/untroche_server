@@ -488,7 +488,7 @@ impl Battle {
                         },
                         Command::Range => {
                             if stack.pop().ok_or(ERR)? <= self.range && stack.pop().ok_or(ERR)? >= self.range {
-                                action.push((Command::Range, 0));
+                                action.push((Command::Range, self.range));
                                 SkillResult::Ok
                             } else {
                                 SkillResult::Fail

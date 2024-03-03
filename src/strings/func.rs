@@ -1,7 +1,7 @@
 use std::{collections::hash_map::DefaultHasher, hash::{Hash, Hasher}, i128};
 
 use actix_rt;
-use actix_web::{error::{ErrorBadRequest, ErrorInternalServerError}, HttpRequest, web};
+use actix_web::{error::{ErrorBadRequest, ErrorInternalServerError}, web::{self, Json}, HttpRequest};
 use rusqlite::{named_params, params, types::Type, Connection};
 use serde::{Deserialize, Serialize};
 use unicode_segmentation::UnicodeSegmentation;
@@ -396,22 +396,17 @@ pub(super) async fn get_fragments(req: HttpRequest) -> Result<web::Json<Vec<Frag
 }
 
 #[derive(Deserialize)]
-struct MoveFragmentData {
+struct ChangeFragmentData {
     prev: i8,
     next: i8,
     skill_name: Option<String>,
     skill_word: Option<String>,
-}
-#[derive(Deserialize)]
-struct PassFragmentData {
-    slot: i8,
-    to: i16,
+    trash: Option<bool>,
+    pass: Option<i16>,
 }
 #[derive(Deserialize)]
 pub(super) struct UpdateFragmentsData {
-    change: Vec<MoveFragmentData>,
-    trash: Vec<i8>,
-    pass: Vec<PassFragmentData>,
+    change: Vec<ChangeFragmentData>,
 }
 struct UpdateFragment {
     slot: i8,
@@ -421,7 +416,16 @@ struct UpdateFragment {
     status: [u8; 8],
     skill: Option<i32>,
 }
-pub(super) async fn update_fragments(req: HttpRequest, info: web::Json<UpdateFragmentsData>) -> Result<String, actix_web::Error> {
+struct PartFragmentSkill {
+    skill_name: Option<String>,
+    skill_word: Option<String>,
+}
+#[derive(Serialize)]
+pub(super) struct ResultUpdateFragments {
+    pass_error: Vec<String>,
+    update_error: Vec<String>,
+}
+pub(super) async fn update_fragments(req: HttpRequest, info: web::Json<UpdateFragmentsData>) -> Result<Json<ResultUpdateFragments>, actix_web::Error> {
     // ログインセッションを取得
     let session =  req.cookie("login_session")
         .ok_or(ErrorBadRequest("ログインセッションがありません"))?;
@@ -429,17 +433,6 @@ pub(super) async fn update_fragments(req: HttpRequest, info: web::Json<UpdateFra
     let conn = common::open_database()?;
     // Enoを取得
     let eno = common::session_to_eno(&conn, session.value())?;
-    // 譲渡
-    for i in &info.pass {
-        // 取得者のスロットに空きがある場合
-        if let Some(slot) = common::get_empty_slot(&conn, i.to)
-            .map_err(|err| ErrorInternalServerError(err))?
-        {
-            // フラグメントの移動
-            conn.execute("UPDATE fragment SET eno=?1,slot=?2 WHERE eno=?3 AND slot=?4", params![i.to, slot, eno, i.slot])
-                .map_err(|err| ErrorInternalServerError(err))?;
-        }
-    }
     // フラグメントの一覧を取得
     let result = || -> Result<_, rusqlite::Error> {
         let mut stmt = conn.prepare("SELECT slot,category,name,lore,status,skill FROM fragment WHERE eno=?1")?;
@@ -455,70 +448,124 @@ pub(super) async fn update_fragments(req: HttpRequest, info: web::Json<UpdateFra
         })?.collect::<Result<Vec<_>, _>>()?;
         Ok(result)
     }().map_err(|err| ErrorInternalServerError(err))?;
-    // 削除
-    let mut sql = "DELETE FROM fragment WHERE eno=?1 AND slot IN (".to_string();
-    let mut params = params![eno].to_vec();
-    let mut n = 2i8;
-    // 廃棄するものの得点付け・SQL文構成
+    // 削除リスト作成
+    let mut delete_list = Vec::new();
     let mut kins = 0;
-    for i in &info.trash {
-        if let Some(x) = result.iter().find(|&x| &x.slot == i) {
-            kins += common::calc_fragment_kins(x.status);
-            if n > 2 {
-                sql += ",";
+    for i in &info.change {
+        // 破棄する場合
+        if i.trash == Some(true) {
+            // 変更元を取得
+            if let Some(f) = result.iter().find(|x| x.slot == i.prev) {
+                // 獲得キンス計算
+                kins += common::calc_fragment_kins(f.status);
             }
-            sql += &format!("?{}", n);
-            n += 1;
-            params.push(i);
+        }
+        // 削除リストに追加
+        delete_list.push(i.prev.to_string());
+    }
+    // 確実に数値なので直接SQL文に挿入
+    let sql = format!("DELETE FROM fragment WHERE eno=?1 AND slot IN ({})", delete_list.join(","));
+    // 削除実行
+    conn.execute(&sql, params![eno]).map_err(|err| ErrorInternalServerError(err))?;
+    // 変更
+    let mut result_update_fragments = ResultUpdateFragments { pass_error: Vec::new(), update_error: Vec::new() };
+    let mut append_fragment = Vec::new();
+    for i in &info.change {
+        // 破棄対象でない場合
+        if i.trash != Some(true) {
+            // 変更元を取得
+            if let Some(f) = result.iter().find(|x| x.slot == i.prev) {
+                // 移動先フラグメントを取得（本来削除済みなのでないはず、あるとしたら更新順序）
+                match conn.query_row("SELECT slot,category,name,lore,status,skill,skillname,skillword FROM fragment WHERE eno=?1 AND slot=?2", params![eno, i.next], |row| {
+                    Ok((UpdateFragment {
+                        slot: row.get(0)?,
+                        category: row.get(1)?,
+                        name: row.get(2)?,
+                        lore: row.get(3)?,
+                        status: row.get(4)?,
+                        skill: row.get(5)?,
+                    },PartFragmentSkill {
+                        skill_name: row.get(6)?,
+                        skill_word: row.get(7)?,
+                    }))
+                }) {
+                    Ok(next) => {
+                        // 取得できてしまったら退避させて削除
+                        conn.execute("DELETE FROM fragment WHERE eno=?1 AND slot=?2", params![eno, next.0.slot])
+                            .map_err(|err| ErrorInternalServerError(err))?;
+                        append_fragment.push(next);
+                    }
+                    Err(rusqlite::Error::QueryReturnedNoRows) => (),
+                    Err(err) => return Err(ErrorInternalServerError(err)),
+                }
+                let mut eno = eno;
+                let mut slot = i.next;
+                // passが指定されている場合
+                if let Some(pass) = i.pass {
+                    // 取得者のスロットの空き状況を取得
+                    match common::get_empty_slot(&conn, pass) {
+                        // 空きがある
+                        Ok(Some(s)) => {
+                            // 対象とスロットをそちらに変更
+                            eno = pass;
+                            slot = s;
+                        }
+                        // 空きがない、または対象が存在しない
+                        Ok(None) | Err(rusqlite::Error::QueryReturnedNoRows) => (),
+                        // エラー
+                        Err(err) => return Err(ErrorInternalServerError(err)),
+                    }
+                    // koko
+                    result_update_fragments.pass_error.push(f.name.clone());
+                }
+                // 新しいフラグメントを追加
+                conn.execute("INSERT INTO fragment VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)",
+                    params![
+                        eno,
+                        slot,
+                        f.category,
+                        f.name,
+                        f.lore,
+                        f.status,
+                        f.skill,
+                        i.skill_name,
+                        i.skill_word,
+                    ]
+                ).map_err(|err| ErrorInternalServerError(err))?;
+            }
         }
     }
-    sql += ")";
-    conn.execute(&sql, params.as_slice()).map_err(|err| ErrorInternalServerError(err))?;
+    // 退避させたフラグメントを追加しなおし
+    for i in append_fragment {
+        // スロットの空きを取得
+        if let Some(slot) = common::get_empty_slot(&conn, eno)
+            .map_err(|err| ErrorInternalServerError(err))? {
+            // 空きに追加
+            conn.execute("INSERT INTO fragment VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)",
+                params![
+                    eno,
+                    slot,
+                    i.0.category,
+                    i.0.name,
+                    i.0.lore,
+                    i.0.status,
+                    i.0.skill,
+                    i.1.skill_name,
+                    i.1.skill_word,
+                ]
+            ).map_err(|err| ErrorInternalServerError(err))?;
+        } else {
+            // 無かったら獲得キンスに計上して名前を保存
+            kins += common::calc_fragment_kins(i.0.status);
+            result_update_fragments.update_error.push(i.0.name);
+        }
+    }
     // キンス反映
     if kins != 0 {
         conn.execute("UPDATE character SET kins=kins+?1 WHERE eno=?2", params![kins, eno])
             .map_err(|err| ErrorInternalServerError(err))?;
     }
-    // 移動・更新
-    // 削除
-    let mut sql = "DELETE FROM fragment WHERE eno=?1 AND slot IN (".to_string();
-    let mut params = params![eno].to_vec();
-    let mut n = 2i8;
-    for i in &info.change {
-        if n > 2 {
-            sql += ",";
-        }
-        sql += &format!("?{}", n);
-        n += 1;
-        params.push(&i.prev);
-    }
-    sql += ")";
-    conn.execute(&sql, params.as_slice()).map_err(|err| ErrorInternalServerError(err))?;
-    for i in &info.change {
-        let mut errs = Vec::new();
-        if let Some(x) = result.iter().find(|&x| x.slot == i.prev) {
-            if let Err(err) = conn.execute(
-                "INSERT INTO fragment VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)",
-                params![
-                    eno,
-                    i.next,
-                    x.category,
-                    x.name,
-                    x.lore,
-                    x.status,
-                    x.skill,
-                    i.skill_name,
-                    i.skill_word,
-                ],
-            ) {
-                errs.push(err);
-            }
-        }
-        if !errs.is_empty() {
-            return Err(ErrorInternalServerError(errs.iter().map(|x| x.to_string()).collect::<Vec<String>>().join("\n")));
-        }
-    }
-    Ok("フラグメントを更新しました".to_string())
+    Ok(web::Json(result_update_fragments))
 }
 
 #[derive(Deserialize)]
@@ -985,19 +1032,18 @@ pub(super) struct GetLocationData {
 #[derive(Serialize)]
 pub(super) struct Location {
     name: String,
-    lore: String,
+    lore: Option<String>,
 }
 pub(super) async fn get_location(req: HttpRequest, info: web::Query<GetLocationData>) -> Result<web::Json<Location>, actix_web::Error> {
     // データベースに接続
     let conn = common::open_database()?;
     if let Some(location) = &info.location {
         // 説明文を取得
-        let lore: String = conn.query_row("SELECT lore FROM location WHERE name=?1", params![location], |row| Ok(row.get(0)?))
-            .map_err(|err| match err {
-                rusqlite::Error::QueryReturnedNoRows => ErrorBadRequest("この場所の情報はありません"),
-                _ => ErrorInternalServerError(err),
-            })?;
-        Ok(web::Json(Location { name: location.to_string(), lore }))
+        match conn.query_row("SELECT lore FROM location WHERE name=?1", params![location], |row| Ok(row.get(0)?)) {
+            Ok(lore) => Ok(web::Json(Location { name: location.to_string(), lore })),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(web::Json(Location { name: location.to_string(), lore: Some("この場所の情報はない。".to_string()) })),
+            Err(err) => Err(ErrorInternalServerError(err)),
+        }
     } else {
         // ログインセッションを取得
         let session =  req.cookie("login_session")
@@ -1005,18 +1051,22 @@ pub(super) async fn get_location(req: HttpRequest, info: web::Query<GetLocationD
         // Enoを取得
         let eno = common::session_to_eno(&conn, session.value())?;
         // 取得・返却
-        Ok(web::Json(
-            conn.query_row(
-                "SELECT name,lore FROM location WHERE name=(SELECT location FROM character WHERE eno=?1)",
-                params![eno],
-                |row| Ok(Location {
-                    name: row.get(0)?,
-                    lore: row.get(1)?,
-                })
-            ).map_err(|err| match err {
-                rusqlite::Error::QueryReturnedNoRows => ErrorBadRequest("この場所の情報はありません"),
-                _ => ErrorInternalServerError(err),
-            })?
-        ))
+        match conn.query_row(
+            "SELECT name,lore FROM location WHERE name=(SELECT location FROM character WHERE eno=?1)",
+            params![eno],
+            |row| Ok(Location {
+                name: row.get(0)?,
+                lore: row.get(1)?,
+            })
+        ) {
+            Ok(location) => {
+                if location.lore != None {
+                    Ok(web::Json(location))
+                } else {
+                    Ok(web::Json(Location { name: location.name, lore: Some("この場所の情報はない。".to_string()) }))
+                }
+            }
+            Err(err) => Err(ErrorInternalServerError(err)),
+        }
     }
 }

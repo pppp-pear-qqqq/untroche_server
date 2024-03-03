@@ -581,6 +581,7 @@ function open_desc(event) {
 		const status = e.querySelector('.status');
 		desc.querySelector('.status').innerText = `${'HP' + status.dataset.hp}, ${'MP' + status.dataset.mp}, ${'ATK' + status.dataset.atk}, ${'TEC' + status.dataset.tec}`;
 		const skill = e.querySelector('.skill');
+		desc.querySelector('input.pass').value = e.dataset.to !== undefined ? e.dataset.to : '';
 		const desc_skill = desc.querySelector('.skill');
 		if (skill.classList.contains('none')) {
 			desc_skill.classList.add('hide');
@@ -641,38 +642,48 @@ function update_status(list) {
 	status.dataset.tec = tec;
 }
 function update_fragments() {
-	let changed = [];
-	let trash = [];
-	let pass = [];
+	let change = [];
 	const fragments = document.querySelector('#fragment .container');
-	fragments.querySelectorAll('.changed:not(.trash)').forEach(elem => {
+	let exit = false;
+	fragments.querySelectorAll('.changed,.trash,.pass').forEach(elem => {
 		const skill = elem.querySelector('.skill');
-		changed.push({
-			prev: Number(elem.dataset.slot),
+		const prev = Number(elem.dataset.slot);
+		let to = null;
+		if (elem.classList.contains('pass')) {
+			if (isNaN(elem.dataset.to)) {
+				alertify.error(`ID${prev} 送り先が指定されていません`);
+				exit = true;
+				return;
+			} else {
+				to = Number(elem.dataset.to);
+			}
+		}
+		change.push({
+			prev: prev,
 			next: [].slice.call(fragments.children).indexOf(elem) + 1,
 			skill_name: skill.dataset.name,
 			skill_word: skill.dataset.word,
-		});
-	});
-	fragments.querySelectorAll('.trash').forEach(elem => trash.push(Number(elem.dataset.slot)));
-	let exit = false;
-	fragments.querySelectorAll('.pass').forEach(elem => {
-		if (isNaN(elem.dataset.to)) {
-			alertify.error('送り先が指定されていません');
-			exit = true;
-		}
-		pass.push({
-			slot: Number(elem.dataset.slot),
-			to: Number(elem.dataset.to),
+			trash: elem.classList.contains('trash'),
+			pass: to,
 		});
 	});
 	if (exit) return;
 	ajax.open({
 		url: 'strings/update_fragments',
-		ret: 'text',
-		post: {change: changed, trash: trash, pass: pass},
+		ret: 'json',
+		post: {change: change},
 		ok: ret => {
-			alertify.success(ret);
+			let complate = true;
+			console.log(ret);
+			if (ret['pass_error'].length !== 0) {
+				alertify.warning(`『${ret['pass_error'].join('』の譲渡に失敗しました<br>『')}』の譲渡に失敗しました`);
+				complate = false;
+			}
+			if (ret['update_error'].length !== 0) {
+				alertify.warning(`『${ret['update_error'].join('』が自動的に破棄されました<br>『')}』が自動的に破棄されました`);
+				complate = false;
+			}
+			if (complate) alertify.success('フラグメントを更新しました');
 			close_desc();
 			load_fragments(fragments);
 		}
@@ -769,6 +780,7 @@ window.addEventListener('load', async () => {
 	// ========================
 	// 機能の設定
 	// ========================
+	alertify.success(`Eno.${eno} でログインしました。`);
 	document.querySelectorAll('#footer>.tab').forEach(elem => {
 		elem.onclick = event => view_window(event.currentTarget);
 	});

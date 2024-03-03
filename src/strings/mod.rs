@@ -80,7 +80,7 @@ async fn index(req: HttpRequest) -> Result<HttpResponse, actix_web::Error> {
                 .map_err(|err| ErrorInternalServerError(err))?;
             let display: Vec<&str> = if display != "" { display.split("\r\n").collect() } else { Vec::new() };
             let lore: String = conn.query_row("SELECT lore FROM location WHERE name=?1", params![location], |row| Ok(row.get(0)?))
-                .unwrap_or("この場所の情報はない。<br><br>正常な手段でここへ来たのであれば、運営に報告をお願いします。".to_string());
+                .unwrap_or("この場所の情報はない。".to_string());
             // 返却
             return || -> Result<HttpResponse, liquid::Error> {
                 Ok(HttpResponse::Ok()

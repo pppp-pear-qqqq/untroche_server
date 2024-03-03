@@ -131,7 +131,7 @@
 						<div>
 							<img src="strings/pic/delete_2_line.svg" width="24" height="24" class="trash">
 							<img src="strings/pic/gift_line.svg" width="24" height="24" class="pass">
-							<label>&gt;&gt;Eno<input type="number" onclick="desc_fragment.dataset.to = this.value"></label>
+							<label>&gt;&gt;Eno<input type="number" class="pass" onchange="desc_fragment.dataset.to = this.value"></label>
 						</div>
 					</div>
 				</div>
@@ -145,7 +145,7 @@
 				<label>Discord連携<input type="text" placeholder="ウェブフックURL" value="{{webhook}}"></label>
 				<div class="command">
 					<button type="button" class="my_profile">自分のプロフィール</button>
-					<button type="button" onclick="location.href = location.href">なにかがおかしいときに押すボタン</button>
+					<button type="button" onclick="location.reload(true)">なにかがおかしいときに押すボタン</button>
 					<button type="button" onclick="logout()">ログアウト</button>
 				</div>
 				<h4>キャラクターリスト<a class="reload">更新</a></h4>
