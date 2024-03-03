@@ -602,6 +602,10 @@
 		margin: 8px;
 		justify-content: space-between;
 	}
+	>.link {
+		padding: 8px;
+		gap: 8px;
+	}
 	>.characters {
 		padding: 8px;
 		flex-grow: 1;
