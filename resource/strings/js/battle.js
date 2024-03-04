@@ -57,7 +57,8 @@ class Battle {
 		}
 	}
 	update() {
-		this.elem_range.style.width = `calc(25em * ${this.range} / ${this.escape_range})`
+		this.elem_range.style.width = `calc(25em * ${this.range} / ${this.escape_range} + 2em)`
+		this.elem_range.innerText = this.range;
 		this.character[0].update();
 		this.character[1].update();
 	}

@@ -21,9 +21,21 @@ impl Fragment {
 // ================================
 
 pub static DATABASE: &str = "db/strings.db";
+pub static SERVER_MAINTENANCE_TEXT: &str = "メンテナンス中です。リロードしてください。";
+pub static SERVER_END_TEXT: &str = "このサイトは稼働終了しました。リロードしてください。";
+pub static SERVER_UNDEFINED_TEXT: &str = "サーバーが不明な状態です";
 
 pub fn open_database() -> Result<Connection, actix_web::Error> {
-    Connection::open(DATABASE).map_err(|err| actix_web::error::ErrorInternalServerError(err))
+    Connection::open(DATABASE).map_err(|err| ErrorInternalServerError(err))
+}
+
+pub fn check_server_state(conn: &Connection) -> Result<Result<(), String>, actix_web::Error> {
+    let state: String = conn.query_row("SELECT state FROM server", [], |row| Ok(row.get(0)?))
+        .map_err(|err| ErrorInternalServerError(err))?;
+    match state.as_str() {
+        "run" => Ok(Ok(())),
+        _ => Ok(Err(state)),
+    }
 }
 
 // ログインセッションを確認し、enoを返却する
@@ -168,5 +180,6 @@ pub fn calc_fragment_kins(status: [u8; 8]) -> i32 {
     kins += (status[2] as i32) << 8 | status[3] as i32;
     kins += ((status[4] as i32) << 8 | status[5] as i32) * 3;
     kins += ((status[6] as i32) << 8 | status[7] as i32) * 3;
-    return kins.max(0);
+    kins /= 10;
+    kins.max(0)
 }

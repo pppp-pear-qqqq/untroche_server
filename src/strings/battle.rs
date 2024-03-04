@@ -50,6 +50,8 @@ pub enum Command {
     ChangeRange,
     ChangeEscapeRange,
     ChangeUser,
+
+    BreakToEnd,
 }
 impl Command {
     pub fn from(v: i16) -> Command {
@@ -92,6 +94,8 @@ impl Command {
             -0x3a => Self::ChangeRange,
             -0x3b => Self::ChangeEscapeRange,
             -0x3c => Self::ChangeUser,
+
+            -0x51 => Self::BreakToEnd,
 
             _ => Self::Value(v as i16)
         }
@@ -151,6 +155,8 @@ impl Command {
             Self::ChangeRange => -0x3a,
             Self::ChangeEscapeRange => -0x3b,
             Self::ChangeUser => -0x3c,
+
+            Self::BreakToEnd => -0x51,
         }
     }
     pub fn to_string(&self) -> String {
@@ -191,6 +197,7 @@ impl Command {
             Self::ChangeRange => "間合変更".to_string(),
             Self::ChangeEscapeRange => "逃走ライン".to_string(),
             Self::ChangeUser => "対象変更".to_string(),
+            Self::BreakToEnd => "中断時終了".to_string(),
         }
     }
 }
@@ -450,6 +457,7 @@ impl Battle {
                 }
                 // 完了フラグを初期化
                 is_complete = true;
+                let mut break_to_end = false;
                 let mut stack = Vec::<i16>::new();
                 let mut u = user;
                 // スキルを実行していく
@@ -584,10 +592,14 @@ impl Battle {
                             u = u ^ 1;
                             action.push((Command::ChangeUser, 0));
                             SkillResult::Ok
-                        }
+                        },
+                        Command::BreakToEnd => {
+                            break_to_end = true;
+                            SkillResult::Ok
+                        },
                     } {
                         // もしスキルが失敗したら、完了フラグを折ってスキルを中断する
-                        is_complete = false;
+                        is_complete = break_to_end;
                         break;
                     }
                     if f == &Command::Attack || f == &Command::MindAttack {
@@ -727,15 +739,18 @@ pub fn battle(ch0_eno: i16, ch1_eno: i16) -> Result<Log, String> {
     battle.log.turn.push(LogTurn::make(SYSTEM, Some("<hr>戦闘開始"), None, None));
     // ターン処理
     // もしこの時点で戦闘が終了していればスキップ
-    let mut turn = 1;
+    let mut turn = 0;
     while battle.result == None && turn <= 30 {
+        turn += 1;
         battle.log.turn.push(LogTurn::make(SYSTEM, Some(&format!("<hr>ターン {}", turn)), None, None));
         for i in 0..battle.character.len() {
             battle.skill_execute(i, Timing::Active)?;
+            // 戦闘終了判定
+            battle.result = check_battle_result(&mut battle)?;
+            if battle.result != None {
+                break;
+            }
         }
-        // 戦闘終了判定
-        battle.result = check_battle_result(&mut battle)?;
-        turn += 1;
     }
     // 戦闘終了時台詞
     battle.log.turn.push(LogTurn::make(SYSTEM, Some("戦闘終了"), None, None));

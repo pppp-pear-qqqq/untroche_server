@@ -114,6 +114,7 @@ struct Character {
     eno: i16,
     name: String,
     location: String,
+    kins: i32,
 }
 #[derive(Deserialize)]
 pub(super) struct Password {
@@ -164,13 +165,14 @@ pub async fn index(pass: web::Query<Password>) -> Result<HttpResponse, actix_web
         .collect::<Result<Vec<_>, _>>()
         .map_err(|err| ErrorInternalServerError(err))?;
     // キャラクター
-    let mut stmt = conn.prepare("SELECT eno,name,location FROM character")
+    let mut stmt = conn.prepare("SELECT eno,name,location,kins FROM character")
         .map_err(|err| ErrorInternalServerError(err))?;
     let characters = stmt.query_map([], |row| {
         Ok(Character{
             eno: row.get(0)?,
             name: row.get(1)?,
             location: row.get(2)?,
+            kins: row.get(3)?,
         })
     })
         .map_err(|err| ErrorInternalServerError(err))?
@@ -284,13 +286,15 @@ pub(super) async fn update_skill(req: HttpRequest, info: web::Json<SkillData>) -
             "回復" => battle::Command::Heal,
             "自傷" => battle::Command::SelfDamage,
             "集中" => battle::Command::Concentrate,
-            "ATK強化" => battle::Command::BuffAtk,
-            "TEC強化" => battle::Command::BuffTec,
+            "ATK変化" => battle::Command::BuffAtk,
+            "TEC変化" => battle::Command::BuffTec,
             "移動" => battle::Command::Move,
             "間合変更" => battle::Command::ChangeRange,
             "逃走ライン" => battle::Command::ChangeEscapeRange,
             "対象変更" => battle::Command::ChangeUser,
 
+            "中断時終了" => battle::Command::BreakToEnd,
+            
             other => battle::Command::Value(other.parse::<i16>().map_err(|err| ErrorInternalServerError(err))?),
         }.to_i16();
         command.push((c >> 8) as u8);

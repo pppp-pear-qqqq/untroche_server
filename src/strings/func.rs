@@ -1,7 +1,7 @@
-use std::{collections::hash_map::DefaultHasher, hash::{Hash, Hasher}, i128};
+use std::{cmp, collections::hash_map::DefaultHasher, hash::{Hash, Hasher}, i128, ops};
 
 use actix_rt;
-use actix_web::{error::{ErrorBadRequest, ErrorInternalServerError}, web::{self, Json}, HttpRequest};
+use actix_web::{error::{ErrorBadRequest, ErrorInternalServerError, ErrorServiceUnavailable}, web::{self, Json}, HttpRequest};
 use rusqlite::{named_params, params, types::Type, Connection};
 use serde::{Deserialize, Serialize};
 use unicode_segmentation::UnicodeSegmentation;
@@ -18,6 +18,14 @@ pub(super) struct LoginData {
 pub(super) async fn login(info: web::Json<LoginData>) -> Result<String, actix_web::Error> {
     // データベースに接続
     let conn = common::open_database()?;
+    // サーバーの状態を確認
+    if let Err(state) = common::check_server_state(&conn)? {
+        match state.as_str() {
+            "maintenance" => return Err(ErrorServiceUnavailable("メンテナンス中につき操作できません")),
+            "end" => return Err(ErrorServiceUnavailable("このサイトは稼働終了しました")),
+            _ => return Err(ErrorInternalServerError(common::SERVER_UNDEFINED_TEXT))
+        }
+    }
     // postで受け取ったパスワードをハッシュ化する
     let mut hasher = DefaultHasher::new();
     info.password.hash(&mut hasher);
@@ -65,6 +73,14 @@ pub(super) async fn register(info: web::Json<RegisterData>) -> Result<String, ac
     let color = [(color_raw >> 16) as u8, (color_raw >> 8) as u8, color_raw as u8];
     // データベースに接続
     let conn = common::open_database()?;
+    // サーバーの状態を確認
+    if let Err(state) = common::check_server_state(&conn)? {
+        match state.as_str() {
+            "maintenance" => return Err(ErrorServiceUnavailable("メンテナンス中につき操作できません")),
+            "end" => return Err(ErrorServiceUnavailable("このサイトは稼働終了しました")),
+            _ => return Err(ErrorInternalServerError(common::SERVER_UNDEFINED_TEXT))
+        }
+    }
     // 発生するエラーはすべてInternalServerError相当なので、クロージャに格納してまとめてmapしている
     || -> Result<_, rusqlite::Error> {
         // 受け取ったパスワードをハッシュ化
@@ -114,6 +130,14 @@ pub(super) async fn send_chat(req: HttpRequest, info: web::Json<SendChatData>) -
         } else { None };
         // データベースに接続
 		let conn = common::open_database()?;
+        // サーバーの状態を確認
+        if let Err(state) = common::check_server_state(&conn)? {
+            match state.as_str() {
+                "maintenance" => return Err(ErrorServiceUnavailable(common::SERVER_MAINTENANCE_TEXT)),
+                "end" => return Err(ErrorServiceUnavailable(common::SERVER_END_TEXT)),
+                _ => return Err(ErrorInternalServerError(common::SERVER_UNDEFINED_TEXT))
+            }
+        }
         // ログインセッションをデータベースと照会
         let eno = common::session_to_eno(&conn, session.value())?;
         // 発言色・現在地を取得
@@ -139,8 +163,8 @@ pub(super) async fn send_chat(req: HttpRequest, info: web::Json<SendChatData>) -
 pub(super) struct GetChatData {
     num: i32,                   // 取得件数
     start: Option<i32>,         // 取得開始位置
-    from: Option<i16>,          // 発言者
-    to: Option<i16>,            // 対象者
+    from: Option<String>,       // 発言者
+    to: Option<String>,         // 対象者
     location: Option<String>,   // 取得座標
     word: Option<String>,       // 検索文字列
 }
@@ -158,10 +182,113 @@ pub(super) struct Chat {
 pub(super) async fn get_chat(req: HttpRequest, info: web::Query<GetChatData>) -> Result<web::Json<Vec<Chat>>, actix_web::Error> {
     // データベースに接続
     let conn = common::open_database()?;
+    // サーバーの状態を確認
+    if let Err(state) = common::check_server_state(&conn)? {
+        match state.as_str() {
+            "maintenance" => return Err(ErrorServiceUnavailable(common::SERVER_MAINTENANCE_TEXT)),
+            "end" => (),
+            _ => return Err(ErrorInternalServerError(common::SERVER_UNDEFINED_TEXT))
+        }
+    }
     // 自身のEnoを（あるなら）取得
     let eno = if let Some(session) = req.cookie("login_session") {
         common::session_to_eno(&conn, session.value()).ok()
     } else { None };
+    // 発言者・対象者条件を生成
+    let (plus, minus) = if info.from != None || info.to != None {
+        // 発言者リストの条件文生成
+        let mut plus = Vec::new();
+        let mut minus = Vec::new();
+        if let Some(v) = &info.from {
+            // 数値リストを取得
+            let v = v.replace(" ", "").split(',').map(|x| {
+                match x.parse::<i16>() {
+                    Ok(v) => {
+                        if v == 0 {
+                            match eno {
+                                Some(eno) => {
+                                    if x.chars().nth(0) == Some('-') {
+                                        Ok(-eno)
+                                    } else {
+                                        Ok(eno)
+                                    }
+                                },
+                                None => Err(ErrorBadRequest("Eno条件に0を使用する場合はログインセッションが必要です"))
+                            }
+                        } else {
+                            Ok(v)
+                        }
+                    }
+                    Err(_) => Err(ErrorBadRequest("Eno条件に数値でないものが含まれています"))
+                }
+            }).collect::<Result<Vec<_>, _>>()?;
+            // 検索対象
+            let p = v.iter().filter_map(|x| {
+                if *x > 0 {
+                    Some(x.to_string())
+                } else { None }
+            }).collect::<Vec<_>>();
+            // 除外対象
+            let m = v.iter().filter_map(|x| {
+                if *x < 0 {
+                    Some(x.abs().to_string())
+                } else { None }
+            }).collect::<Vec<_>>();
+            // 返却
+            if p.len() != 0 {
+                plus.push(format!("from_eno IN ({})", p.join(",")));
+            }
+            if m.len() != 0 {
+                minus.push(format!("from_eno NOT IN ({})", m.join(",")));
+            }
+        }
+        // 対象者リストの書式チェック
+        if let Some(v) = &info.to {
+            // 数値リストを取得
+            let v = v.replace(" ", "").split(',').map(|x| {
+                match x.parse::<i16>() {
+                    Ok(v) => {
+                        if v == 0 {
+                            match eno {
+                                Some(eno) => {
+                                    if x.chars().nth(0) == Some('-') {
+                                        Ok(-eno)
+                                    } else {
+                                        Ok(eno)
+                                    }
+                                },
+                                None => Err(ErrorBadRequest("Eno条件に0を使用する場合はログインセッションが必要です"))
+                            }
+                        } else {
+                            Ok(v)
+                        }
+                    }
+                    Err(_) => Err(ErrorBadRequest("Eno条件に数値でないものが含まれています"))
+                }
+            }).collect::<Result<Vec<_>, _>>()?;
+            // 検索対象
+            let p = v.iter().filter_map(|x| {
+                if *x > 0 {
+                    Some(x.to_string())
+                } else { None }
+            }).collect::<Vec<_>>();
+            // 除外対象
+            let m = v.iter().filter_map(|x| {
+                if *x < 0 {
+                    Some(x.abs().to_string())
+                } else { None }
+            }).collect::<Vec<_>>();
+            // 返却
+            if p.len() != 0 {
+                plus.push(format!("to_eno IN ({})", p.join(",")));
+            }
+            if m.len() != 0 {
+                minus.push(format!("to_eno NOT IN ({})", m.join(",")));
+            }
+        }
+        // (from IN (...) OR to IN (...)) AND (from NOT IN (...) OR to NOT IN (...))
+        (if plus.len() != 0 { Some(format!("({})", plus.join(" OR "))) } else { None }, if minus.len() != 0 { Some(format!("({})", minus.join(" OR "))) } else { None })
+    } else { (None, None) };
     // ロケーション指定
     let location = match &info.location {
         // ロケーションが指定されている
@@ -192,6 +319,13 @@ pub(super) async fn get_chat(req: HttpRequest, info: web::Query<GetChatData>) ->
     // SQL文とパラメータを生成
     let mut sql = Vec::new();
     let mut params = named_params![":num":info.num].to_vec();
+    // キャラクター
+    if let Some(plus) = &plus {
+        sql.push(plus.as_str());
+    }
+    if let Some(minus) = &minus {
+        sql.push(minus.as_str());
+    }
     // ロケーション
     if let Some(location) = &location {
         sql.push("location=:location");
@@ -201,16 +335,6 @@ pub(super) async fn get_chat(req: HttpRequest, info: web::Query<GetChatData>) ->
     if let Some(start) = &info.start {
         sql.push("id<:start");
         params.push((":start", start));
-    }
-    // 発言者
-    if let Some(from) = &info.from {
-        sql.push("from_eno=:from");
-        params.push((":from", if *from == 0 { &eno } else { from }));
-    }
-    // 対象者
-    if let Some(to) = &info.to {
-        sql.push("to_eno=:to");
-        params.push((":to", if *to == 0 { &eno } else { to }));
     }
     // 検索文字列
     if let Some(word) = &info.word {
@@ -264,6 +388,14 @@ pub(super) struct Character {
 pub(super) async fn get_characters(req: HttpRequest, info: web::Query<GetCharacterData>) -> Result<web::Json<Vec<Character>>, actix_web::Error> {
     // データベースに接続
     let conn = common::open_database()?;
+    // サーバーの状態を確認
+    if let Err(state) = common::check_server_state(&conn)? {
+        match state.as_str() {
+            "maintenance" => return Err(ErrorServiceUnavailable(common::SERVER_MAINTENANCE_TEXT)),
+            "end" => (),
+            _ => return Err(ErrorInternalServerError(common::SERVER_UNDEFINED_TEXT))
+        }
+    }
     // 自身のEnoを（あるなら）取得
     let eno = if let Some(session) = req.cookie("login_session") {
         common::session_to_eno(&conn, session.value()).ok()
@@ -332,8 +464,9 @@ pub(super) async fn get_characters(req: HttpRequest, info: web::Query<GetCharact
 
 #[derive(Serialize)]
 struct Skill {
-    name: String,
-    word: String,
+    id: i32,
+    name: Option<String>,
+    word: Option<String>,
     default_name: String,
     lore: String,
     timing: battle::Timing,
@@ -357,25 +490,32 @@ pub(super) async fn get_fragments(req: HttpRequest) -> Result<web::Json<Vec<Frag
         .ok_or(ErrorBadRequest("ログインセッションがありません"))?;
     // データベースに接続
     let conn = common::open_database()?;
+    // サーバーの状態を確認
+    if let Err(state) = common::check_server_state(&conn)? {
+        match state.as_str() {
+            "maintenance" => return Err(ErrorServiceUnavailable(common::SERVER_MAINTENANCE_TEXT)),
+            "end" => (),
+            _ => return Err(ErrorInternalServerError(common::SERVER_UNDEFINED_TEXT))
+        }
+    }
     // Enoを取得
     let eno = common::session_to_eno(&conn, session.value())?;
     // 取得・整形
     || -> Result<_, rusqlite::Error> {
-        let mut stmt = conn.prepare("WITH f AS (SELECT slot,category,name,lore,status,skill,skillname,skillword FROM fragment WHERE eno=?1) SELECT f.slot,f.category,f.name,f.lore,f.status,f.skillname,f.skillword,s.name,s.lore,s.type,s.effect FROM f LEFT OUTER JOIN skill s ON f.skill=s.id")?;
+        let mut stmt = conn.prepare("WITH f AS (SELECT slot,category,name,lore,status,skill,skillname,skillword FROM fragment WHERE eno=?1) SELECT f.*,s.name,s.lore,s.type,s.effect FROM f LEFT OUTER JOIN skill s ON f.skill=s.id")?;
         let result = stmt.query_map(params![eno], |row| {
             // ステータスの原型
             let status: Vec<u8> = row.get(4)?;
-            // スキル効果の原型
-            let effect:Option<Vec<u8>> = row.get(10)?;
             // スキルの有無を判定・整形
-            let skill = if let Some(effect) = effect {
+            let skill = if let Some(id) = row.get(5)? {
                 Some(Skill { 
-                    name: row.get::<usize, Option<_>>(5)?.unwrap_or(String::new()),
-                    word: row.get::<usize, Option<_>>(6)?.unwrap_or(String::new()),
-                    default_name: row.get::<usize, Option<_>>(7)?.ok_or(rusqlite::Error::InvalidColumnType(0, "skill.lore".to_string(), Type::Text))?,
-                    lore: row.get::<usize, Option<_>>(8)?.ok_or(rusqlite::Error::InvalidColumnType(0, "skill.lore".to_string(), Type::Text))?,
-                    timing: battle::Timing::from(row.get::<usize, Option<_>>(9)?.ok_or(rusqlite::Error::InvalidColumnType(0, "skill.type".to_string(), Type::Integer))?),
-                    effect: battle::Command::convert(effect).map_err(|_| rusqlite::Error::InvalidColumnType(0, "skill.effect".to_string(), Type::Text))?,
+                    id,
+                    name: row.get(6)?,
+                    word: row.get(7)?,
+                    default_name: row.get(8)?,
+                    lore: row.get(9)?,
+                    timing: battle::Timing::from(row.get(10)?),
+                    effect: battle::Command::convert(row.get(11)?).map_err(|_| rusqlite::Error::InvalidColumnType(0, "skill.effect".to_string(), Type::Text))?,
                 })
             } else { None };
             // 取得返却
@@ -431,6 +571,14 @@ pub(super) async fn update_fragments(req: HttpRequest, info: web::Json<UpdateFra
         .ok_or(ErrorBadRequest("ログインセッションがありません"))?;
     // データベースに接続
     let conn = common::open_database()?;
+    // サーバーの状態を確認
+    if let Err(state) = common::check_server_state(&conn)? {
+        match state.as_str() {
+            "maintenance" => return Err(ErrorServiceUnavailable(common::SERVER_MAINTENANCE_TEXT)),
+            "end" => return Err(ErrorServiceUnavailable(common::SERVER_END_TEXT)),
+            _ => return Err(ErrorInternalServerError(common::SERVER_UNDEFINED_TEXT))
+        }
+    }
     // Enoを取得
     let eno = common::session_to_eno(&conn, session.value())?;
     // フラグメントの一覧を取得
@@ -567,6 +715,206 @@ pub(super) async fn update_fragments(req: HttpRequest, info: web::Json<UpdateFra
 }
 
 #[derive(Deserialize)]
+pub(super) struct CreateFragmentData {
+    material: Vec<i8>,
+    category: String,
+    name: String,
+    lore: String,
+    hp: i16,
+    mp: i16,
+    atk: i16,
+    tec: i16,
+    skill: Option<i32>,
+    force: Option<bool>,
+}
+struct CreateFragmentPredicate {
+    has_category: bool,
+    hp: ops::Range<i16>,
+    mp: ops::Range<i16>,
+    atk: ops::Range<i16>,
+    tec: ops::Range<i16>,
+    has_skill: bool,
+}
+pub(super) async fn create_fragment(req: HttpRequest, info: web::Json<CreateFragmentData>) -> Result<Json<i32>, actix_web::Error> {
+    // カテゴリ制限
+    match info.category.as_str() {
+        "名前" | 
+        "世界観" |
+        "秘匿" | 
+        "身代わり" => return Err(ErrorBadRequest(format!("{}カテゴリのフラグメントを作成することはできません", info.category))),
+        _ => (),
+    }
+    // 文字数制限
+    if info.name.grapheme_indices(true).count() > 16 {
+        return Err(ErrorBadRequest("フラグメント名は16文字以内に設定してください"));
+    }
+    if info.lore.grapheme_indices(true).count() > 120 || info.lore.lines().count() > 4 {
+        return Err(ErrorBadRequest("説明文は4行120文字以内に設定してください"));
+    }
+    // ログインセッションを取得
+    let session =  req.cookie("login_session")
+        .ok_or(ErrorBadRequest("ログインセッションがありません"))?;
+    // データベースに接続
+    let conn = common::open_database()?;
+    // サーバーの状態を確認
+    if let Err(state) = common::check_server_state(&conn)? {
+        match state.as_str() {
+            "maintenance" => return Err(ErrorServiceUnavailable(common::SERVER_MAINTENANCE_TEXT)),
+            "end" => return Err(ErrorServiceUnavailable(common::SERVER_END_TEXT)),
+            _ => return Err(ErrorInternalServerError(common::SERVER_UNDEFINED_TEXT))
+        }
+    }
+    // Enoを取得
+    let eno = common::session_to_eno(&conn, session.value())?;
+    // フラグメントの一覧を取得
+    let result = || -> Result<_, rusqlite::Error> {
+        let mut stmt = conn.prepare("SELECT slot,category,name,lore,status,skill FROM fragment WHERE eno=?1")?;
+        let result = stmt.query_map(params![eno], |row| {
+            Ok(UpdateFragment {
+                slot: row.get(0)?,
+                category: row.get(1)?,
+                name: row.get(2)?,
+                lore: row.get(3)?,
+                status: row.get(4)?,
+                skill: row.get(5)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+        Ok(result)
+    }().map_err(|err| ErrorInternalServerError(err))?;
+    // コスト
+    let mut cost = 10;
+    // 判定
+    if info.force != Some(true) {
+        let mut predicate = CreateFragmentPredicate{
+            has_category: false,
+            hp: ops::Range{ start: 0, end: 1 },
+            mp: ops::Range{ start: 0, end: 1 },
+            atk: ops::Range{ start: 0, end: 1 },
+            tec: ops::Range{ start: 0, end: 1 },
+            has_skill: if info.skill == None { true } else { false }
+        };
+        // マテリアル判定
+        for i in &info.material {
+            if let Some(f) = result.iter().find(|&x| &x.slot == i) {
+                // カテゴリ所持
+                if !predicate.has_category && info.category == f.category {
+                    predicate.has_category = true;
+                }
+                // ステータス範囲
+                let hp = (f.status[0] as i16) << 8 | f.status[1] as i16;
+                let mp = (f.status[2] as i16) << 8 | f.status[3] as i16;
+                let atk = (f.status[4] as i16) << 8 | f.status[5] as i16;
+                let tec = (f.status[6] as i16) << 8 | f.status[7] as i16;
+                predicate.hp.start = cmp::min(predicate.hp.start, hp);
+                predicate.hp.end = cmp::max(predicate.hp.end, hp + 1);
+                predicate.mp.start = cmp::min(predicate.mp.start, mp);
+                predicate.mp.end = cmp::max(predicate.mp.end, mp + 1);
+                predicate.atk.start = cmp::min(predicate.atk.start, atk);
+                predicate.atk.end = cmp::max(predicate.atk.end, atk + 1);
+                predicate.tec.start = cmp::min(predicate.tec.start, tec);
+                predicate.tec.end = cmp::max(predicate.tec.end, tec + 1);
+                // スキル所持
+                if !predicate.has_skill && info.skill == f.skill {
+                    predicate.has_skill = true;
+                }
+            }
+        }
+        // カテゴリ未所持ならコスト加算
+        if !predicate.has_category {
+            cost += 10;
+        }
+        // 判定
+        if !predicate.has_skill {
+            return Err(ErrorBadRequest("設定しようとしているスキルは素材に含まれていません"));
+        }
+        println!("hp: {}..{}, mp: {}..{}, atk: {}..{}, tec: {}..{}", predicate.hp.start, predicate.hp.end, predicate.mp.start, predicate.mp.end, predicate.atk.start, predicate.atk.end, predicate.tec.start, predicate.tec.end);
+        if !(predicate.hp.contains(&info.hp) && predicate.mp.contains(&info.mp) && predicate.atk.contains(&info.atk) && predicate.tec.contains(&info.tec)) {
+            return Err(ErrorBadRequest("ステータスが素材の範囲に収まっていません"));
+        }
+    }
+    // 名前一文字につき2
+    cost += info.name.len() as i32 * 2;
+    // 計算だとhp,mp*3==atk,tecだった　それを*5
+    cost += info.hp as i32 * 5;
+    cost += info.mp as i32 * 5;
+    cost += info.atk as i32 * 15;
+    cost += info.tec as i32 * 15;
+    if info.skill != None {
+        cost += 30;
+    }
+    // 説明文1行（改行または30文字まで）ごとに4
+    for i in info.lore.lines() {
+        cost += ((i.grapheme_indices(true).count() as i32 - 1) / 30 + 1) * 4;
+    }
+    // キンス取得
+    let kins: i32 = conn.query_row("SELECT kins FROM character WHERE eno=?1", params![eno], |row| Ok(row.get(0)?))
+        .map_err(|err| ErrorInternalServerError(err))?;
+    // 支払えるかを確認
+    if cost > kins {
+        return Err(ErrorBadRequest("キンスを支払えません"));
+    }
+    // 素材フラグメント削除
+    conn.execute(
+        &format!("DELETE FROM fragment WHERE eno=?1 AND slot IN ({})", info.material.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(",")),
+        params![eno],
+    ).map_err(|err| ErrorInternalServerError(err))?;
+    // 空きスロット取得
+    match common::get_empty_slot(&conn, eno)
+        .map_err(|err| ErrorInternalServerError(err))? {
+        Some(slot) => {
+            let status = [
+                (info.hp >> 8) as u8, info.hp as u8,
+                (info.mp >> 8) as u8, info.mp as u8,
+                (info.atk >> 8) as u8, info.atk as u8,
+                (info.tec >> 8) as u8, info.tec as u8,
+            ];
+            // フラグメント追加
+            conn.execute("INSERT INTO fragment(eno,slot,category,name,lore,status,skill) VALUES(?1,?2,?3,?4,?5,?6,?7)",
+                params![
+                    eno,
+                    slot,
+                    info.category,
+                    info.name,
+                    info.lore,
+                    status,
+                    info.skill,
+                ]
+            ).map_err(|err| ErrorInternalServerError(err))?;
+            // コスト減算
+            conn.execute("UPDATE character SET kins=?1 WHERE eno=?2", params![kins - cost, eno])
+                .map_err(|err| ErrorInternalServerError(err))?;
+            Ok(web::Json(cost))
+        }
+        None => {
+            conn.execute("UPDATE character SET kins=?1 WHERE eno=?2", params![kins + cost * 10, eno])
+                .map_err(|err| ErrorInternalServerError(err))?;
+            Err(ErrorInternalServerError("エラーが発生したため、素材フラグメントが削除されました。<br>補填として消費キンス*10を追加しました。<br>運営に報告をお願いいたします。"))
+        }
+    }
+}
+pub(super) async fn get_has_kins(req: HttpRequest) -> Result<web::Json<i32>, actix_web::Error> {
+    // ログインセッションを取得
+    let session =  req.cookie("login_session")
+        .ok_or(ErrorBadRequest("ログインセッションがありません"))?;
+    // データベースに接続
+    let conn = common::open_database()?;
+    // サーバーの状態を確認
+    if let Err(state) = common::check_server_state(&conn)? {
+        match state.as_str() {
+            "maintenance" => return Err(ErrorServiceUnavailable(common::SERVER_MAINTENANCE_TEXT)),
+            "end" => (),
+            _ => return Err(ErrorInternalServerError(common::SERVER_UNDEFINED_TEXT))
+        }
+    }
+    // Enoを取得
+    let eno = common::session_to_eno(&conn, session.value())?;
+    // キンス取得
+    let kins: i32 = conn.query_row("SELECT kins FROM character WHERE eno=?1", params![eno], |row| Ok(row.get(0)?))
+        .map_err(|err| ErrorInternalServerError(err))?;
+    Ok(web::Json(kins))
+}
+
+#[derive(Deserialize)]
 pub(super) struct GetProfileData {
     eno: i16,
 }
@@ -594,6 +942,14 @@ pub(super) struct Profile {
 pub(super) async fn get_profile(req: HttpRequest, info: web::Query<GetProfileData>) -> Result<web::Json<Profile>, actix_web::Error> {
     // データベースに接続
     let conn = common::open_database()?;
+    // サーバーの状態を確認
+    if let Err(state) = common::check_server_state(&conn)? {
+        match state.as_str() {
+            "maintenance" => return Err(ErrorServiceUnavailable(common::SERVER_MAINTENANCE_TEXT)),
+            "end" => (),
+            _ => return Err(ErrorInternalServerError(common::SERVER_UNDEFINED_TEXT))
+        }
+    }
     // 名前以外の単一項目を取得
     let (name, acronym, color, comment, content, memo): (String, String, [u8; 3], String, String, String) = conn
         .query_row(
@@ -740,6 +1096,14 @@ pub(super) async fn update_profile(req: HttpRequest, info: web::Json<UpdateProfi
     }
     // データベースに接続
     let conn = common::open_database()?;
+    // サーバーの状態を確認
+    if let Err(state) = common::check_server_state(&conn)? {
+        match state.as_str() {
+            "maintenance" => return Err(ErrorServiceUnavailable(common::SERVER_MAINTENANCE_TEXT)),
+            "end" => return Err(ErrorServiceUnavailable(common::SERVER_END_TEXT)),
+            _ => return Err(ErrorInternalServerError(common::SERVER_UNDEFINED_TEXT))
+        }
+    }
     // Enoを取得
     let eno = common::session_to_eno(&conn, session.value())?;
     params.push(&eno);
@@ -777,6 +1141,14 @@ pub(super) async fn send_battle(req: HttpRequest, info: web::Json<SendBattleData
         .ok_or(ErrorBadRequest("ログインセッションがありません"))?;
     // データベースに接続
     let conn = common::open_database()?;
+    // サーバーの状態を確認
+    if let Err(state) = common::check_server_state(&conn)? {
+        match state.as_str() {
+            "maintenance" => return Err(ErrorServiceUnavailable(common::SERVER_MAINTENANCE_TEXT)),
+            "end" => return Err(ErrorServiceUnavailable(common::SERVER_END_TEXT)),
+            _ => return Err(ErrorInternalServerError(common::SERVER_UNDEFINED_TEXT))
+        }
+    }
     // Enoを取得
     let eno = common::session_to_eno(&conn, session.value())?;
     // Enoが指定されたものと同じでないのを確認
@@ -819,6 +1191,14 @@ pub(super) async fn receive_battle(req: HttpRequest, info: web::Json<ReceiveBatt
         .ok_or(ErrorBadRequest("ログインセッションがありません"))?;
     // データベースに接続
     let conn = common::open_database()?;
+    // サーバーの状態を確認
+    if let Err(state) = common::check_server_state(&conn)? {
+        match state.as_str() {
+            "maintenance" => return Err(ErrorServiceUnavailable(common::SERVER_MAINTENANCE_TEXT)),
+            "end" => return Err(ErrorServiceUnavailable(common::SERVER_END_TEXT)),
+            _ => return Err(ErrorInternalServerError(common::SERVER_UNDEFINED_TEXT))
+        }
+    }
     // Enoを取得
     let eno = common::session_to_eno(&conn, session.value())?;
     // 戦闘の進行を確認
@@ -850,29 +1230,37 @@ pub(super) async fn receive_battle(req: HttpRequest, info: web::Json<ReceiveBatt
                     ]
                 ).map_err(|err| ErrorInternalServerError(err))?;
                 // フラグメント移動
-                let name = match log.result.as_str() {
+                let fragment = match log.result.as_str() {
                     "left" => take_fragment(&conn, info.from, eno).map_err(|err| ErrorInternalServerError(err))?,
                     "right" => take_fragment(&conn, eno, info.from).map_err(|err| ErrorInternalServerError(err))?,
                     _ => None,
                 };
                 let _ = handle.await;
                 // 戦闘ログを返す
-                Ok(format!("[{},{{\"name\":\"{}\"}}]", log_json, name.unwrap_or(String::new())))
+                if let Some(fragment) = fragment {
+                    Ok(format!("{{\"result\":\"{}\",\"log\":{},\"fragment\":\"{}\"}}", log.result, log_json, fragment))
+                } else {
+                    Ok(format!("{{\"result\":\"{}\",\"log\":{}}}", log.result, log_json))
+                }
             } else {
                 // 戦闘処理を省略して勝敗決定
                 // 攻撃者に連絡
                 let handle = actix_rt::spawn(common::send_webhook(info.from, format!("Eno.{} との戦闘が省略され、{}しました。", eno, if plan != 0 { "勝利" } else { "敗北" })));
                 // フラグメント移動
-                if plan == 0 {
+                let fragment = if plan == 0 {
                     take_fragment(&conn, eno, info.from)
-                        .map_err(|err| ErrorInternalServerError(err))?;
+                        .map_err(|err| ErrorInternalServerError(err))?
                 } else {
                     take_fragment(&conn, info.from, eno)
-                        .map_err(|err| ErrorInternalServerError(err))?;
+                        .map_err(|err| ErrorInternalServerError(err))?
                 };
                 let _ = handle.await;
                 // 被攻撃者に連絡
-                Ok(format!("{{\"result\":\"omission\",\"content\":\"Eno.{} との戦闘が省略され、{}しました\"}}", info.from, if info.plan != 0 { "勝利" } else { "敗北" }))
+                if let Some(fragment) = fragment {
+                    Ok(format!("{{\"result\":\"{}\",\"fragment\":\"{}\"}}", if plan != 0 { "left" } else { "right" }, fragment))
+                } else {
+                    Ok(format!("{{\"result\":\"{}\"}}", if plan != 0 { "left" } else { "right" }))
+                }
             }
         }
         _ => {
@@ -882,7 +1270,7 @@ pub(super) async fn receive_battle(req: HttpRequest, info: web::Json<ReceiveBatt
                 .map_err(|err| ErrorInternalServerError(err))?;
             let _ = handle.await;
             // 被攻撃者に連絡
-            Ok(format!("{{\"result\":\"omission\",\"content\":\"Eno.{} との戦闘から逃走しました\"}}", info.from))
+            Ok("{{\"result\":\"escape\"}}".to_string())
         }
     }
 }
@@ -933,6 +1321,14 @@ pub(super) async fn get_battle_reserve(req: HttpRequest) -> Result<web::Json<Vec
         .ok_or(ErrorBadRequest("ログインセッションがありません"))?;
     // データベースに接続
     let conn = common::open_database()?;
+    // サーバーの状態を確認
+    if let Err(state) = common::check_server_state(&conn)? {
+        match state.as_str() {
+            "maintenance" => return Err(ErrorServiceUnavailable(common::SERVER_MAINTENANCE_TEXT)),
+            "end" => (),
+            _ => return Err(ErrorInternalServerError(common::SERVER_UNDEFINED_TEXT))
+        }
+    }
     // Enoを取得
     let eno = common::session_to_eno(&conn, session.value())?;
     // 取得・整形
@@ -970,6 +1366,14 @@ pub(super) struct BattleLog {
 pub(super) async fn get_battle_logs(info: web::Query<Eno>) -> Result<web::Json<Vec<BattleLog>>, actix_web::Error> {
     // データベースに接続
     let conn = common::open_database()?;
+    // サーバーの状態を確認
+    if let Err(state) = common::check_server_state(&conn)? {
+        match state.as_str() {
+            "maintenance" => return Err(ErrorServiceUnavailable(common::SERVER_MAINTENANCE_TEXT)),
+            "end" => (),
+            _ => return Err(ErrorInternalServerError(common::SERVER_UNDEFINED_TEXT))
+        }
+    }
     // 取得・整形
     || -> Result<_, rusqlite::Error> {
         let mut stmt = conn.prepare("WITH b AS (SELECT id,left_eno,right_eno,result FROM battle WHERE ?1 IN (left_eno,right_eno)) SELECT b.id,b.left_eno,l.name,l.color,b.right_eno,r.name,r.color,b.result FROM b INNER JOIN character l ON b.left_eno=l.eno INNER JOIN character r ON b.right_eno=r.eno")?;
@@ -992,6 +1396,14 @@ pub(super) struct GetBattleLogData {
 pub(super) async fn get_battle_log(info: web::Query<GetBattleLogData>) -> Result<String, actix_web::Error> {
     // データベースに接続
     let conn = common::open_database()?;
+    // サーバーの状態を確認
+    if let Err(state) = common::check_server_state(&conn)? {
+        match state.as_str() {
+            "maintenance" => return Err(ErrorServiceUnavailable(common::SERVER_MAINTENANCE_TEXT)),
+            "end" => (),
+            _ => return Err(ErrorInternalServerError(common::SERVER_UNDEFINED_TEXT))
+        }
+    }
     // 取得返却
     Ok(
         conn.query_row("SELECT log FROM battle WHERE id=?1", params![info.id], |row| Ok(row.get(0)?))
@@ -1011,6 +1423,14 @@ pub(super) async fn cancel_battle(req: HttpRequest, info: web::Json<CancelBattle
         .ok_or(ErrorBadRequest("ログインセッションがありません"))?;
     // データベースに接続
     let conn = common::open_database()?;
+    // サーバーの状態を確認
+    if let Err(state) = common::check_server_state(&conn)? {
+        match state.as_str() {
+            "maintenance" => return Err(ErrorServiceUnavailable(common::SERVER_MAINTENANCE_TEXT)),
+            "end" => return Err(ErrorServiceUnavailable(common::SERVER_END_TEXT)),
+            _ => return Err(ErrorInternalServerError(common::SERVER_UNDEFINED_TEXT))
+        }
+    }
     // Enoを取得
     let eno = common::session_to_eno(&conn, session.value())?;
     // 通知
@@ -1035,6 +1455,14 @@ pub(super) struct Location {
 pub(super) async fn get_location(req: HttpRequest, info: web::Query<GetLocationData>) -> Result<web::Json<Location>, actix_web::Error> {
     // データベースに接続
     let conn = common::open_database()?;
+    // サーバーの状態を確認
+    if let Err(state) = common::check_server_state(&conn)? {
+        match state.as_str() {
+            "maintenance" => return Err(ErrorServiceUnavailable(common::SERVER_MAINTENANCE_TEXT)),
+            "end" => (),
+            _ => return Err(ErrorInternalServerError(common::SERVER_UNDEFINED_TEXT))
+        }
+    }
     if let Some(location) = &info.location {
         // 説明文を取得
         match conn.query_row("SELECT lore FROM location WHERE name=?1", params![location], |row| Ok(row.get(0)?)) {

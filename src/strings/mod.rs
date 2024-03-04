@@ -5,11 +5,7 @@ use actix_web::{
 	cookie::{
 		time::Duration,
 		Cookie
-	},
-	error::ErrorInternalServerError,
-	HttpRequest,
-	HttpResponse,
-	web,
+	}, error::ErrorInternalServerError, web, HttpRequest, HttpResponse
 };
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
@@ -29,6 +25,7 @@ pub fn config(cfg: &mut web::ServiceConfig) {
 		.route("/login", web::post().to(func::login))
 		.route("/send_chat", web::post().to(func::send_chat))
 		.route("/update_fragments", web::post().to(func::update_fragments))
+		.route("/create_fragment", web::post().to(func::create_fragment))
 		.route("/update_profile", web::post().to(func::update_profile))
 		.route("/send_battle", web::post().to(func::send_battle))
 		.route("/receive_battle", web::post().to(func::receive_battle))
@@ -37,6 +34,7 @@ pub fn config(cfg: &mut web::ServiceConfig) {
 		.route("/get_chat", web::get().to(func::get_chat))
 		.route("/get_characters", web::get().to(func::get_characters))
 		.route("/get_fragments", web::get().to(func::get_fragments))
+		.route("/get_has_kins", web::get().to(func::get_has_kins))
 		.route("/get_profile", web::get().to(func::get_profile))
 		.route("/get_battle_log", web::get().to(func::get_battle_log))
 		.route("/get_battle_logs", web::get().to(func::get_battle_logs))
@@ -60,6 +58,28 @@ struct FormFragment {
 async fn index(req: HttpRequest) -> Result<HttpResponse, actix_web::Error> {
     // データベースに接続
     let conn = common::open_database()?;
+    // サーバーの状態を確認
+    if let Err(state) = common::check_server_state(&conn)? {
+        match state.as_str() {
+            "maintenance" => return Ok(HttpResponse::Ok()
+                .body(
+                    liquid::ParserBuilder::with_stdlib()
+                        .build().map_err(|err| ErrorInternalServerError(err))?
+                        .parse(&fs::read_to_string("html/maintenance.html").unwrap()).map_err(|err| ErrorInternalServerError(err))?
+                        .render(&liquid::object!({})).map_err(|err| ErrorInternalServerError(err))?
+                )
+            ),
+            "end" => return Ok(HttpResponse::Ok()
+                .body(
+                    liquid::ParserBuilder::with_stdlib()
+                        .build().map_err(|err| ErrorInternalServerError(err))?
+                        .parse(&fs::read_to_string("html/entrance.html").unwrap()).map_err(|err| ErrorInternalServerError(err))?
+                        .render(&liquid::object!({"fragment":Vec::<FormFragment>::new()})).map_err(|err| ErrorInternalServerError(err))?
+                )
+            ),
+            _ => return Err(ErrorInternalServerError("サーバーが不明な状態です。"))
+        }
+    }
     // 期限切れのログインセッションを削除
     conn.execute("DELETE FROM login_session WHERE timestamp<datetime('now','-7 days')", [])
         .map_err(|err| ErrorInternalServerError(err))?;
@@ -76,8 +96,7 @@ async fn index(req: HttpRequest) -> Result<HttpResponse, actix_web::Error> {
                     "SELECT name,color,location,display,webhook FROM character c INNER JOIN scene s ON c.eno=?1 AND c.eno=s.eno INNER JOIN user u ON c.eno=u.eno",
                     params![eno],
                     |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?))
-                )
-                .map_err(|err| ErrorInternalServerError(err))?;
+                ).map_err(|err| ErrorInternalServerError(err))?;
             let display: Vec<&str> = if display != "" { display.split("\r\n").collect() } else { Vec::new() };
             let lore: String = conn.query_row("SELECT lore FROM location WHERE name=?1", params![location], |row| Ok(row.get(0)?))
                 .unwrap_or("この場所の情報はない。".to_string());

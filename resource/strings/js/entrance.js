@@ -11,7 +11,6 @@ function register() {
 		const op = elem.options[elem.selectedIndex];
 		data['fragment'].push({ name: op.label, lore: op.innerHTML });
 	});
-	console.log(data);
 	ajax.open({
 		url: 'strings/register',
 		ret: 'text',
@@ -29,7 +28,6 @@ function login() {
 	let data = {};
 	data['eno'] = Number(form.querySelector('[name="eno"]').value);
 	data['password'] = form.querySelector('[name="password"]').value;
-	console.log(data);
 	ajax.open({
 		url: 'strings/login',
 		ret: 'text',

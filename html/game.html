@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 	<head>
-		<meta charset="UTF-8">
+		<meta charset="utf-8">
 		<meta name="viewport" content="width=device-width,initial-scale=1">
 		<title>"Strings"</title>
 		<link rel="preconnect" href="https://fonts.googleapis.com">
@@ -58,7 +58,8 @@
 			<a class="right"><span class="eno"></span><span class="name"></span></a>
 		</div>
 	</template>
-	<script>var eno = {{eno}};{% for p in display %}explore_text.push('{{p}}');{% endfor %}</script>
+	<script>var eno = {{eno}};</script>
+	<script>{% for p in display %}explore_text.push('{{p}}');{% endfor %}</script>
 	<body class="back">
 		<div id="header">
 			<p class="system">"Strings"</p><p><span class="eno">Eno.{{eno}}</span><span class="name">{{name}}</span></p>
@@ -102,17 +103,31 @@
 				</div>
 				<div class="talk" style="border-color: {{color}}">
 					<p class="to">>>Eno<input type="number" name="to" placeholder="指定なし"></p><label class="lock"><input type="checkbox" name="location"><img></label>
-					<input type="text" class="name" name="name" placeholder="名前" value="{{name}}"><p class="eno">Eno.{{eno}}</p>
-					<textarea class="word" name="word" placeholder="発言内容"></textarea>
+					<input type="text" name="name" class="name" placeholder="名前" value="{{name}}"><p class="eno">Eno.{{eno}}</p>
+					<textarea name="word" class="word" placeholder="発言内容"></textarea>
 					<div class="footer"><span class="bold" onclick="add_decoration_tag('[b|', '|b]')">太字</span><span class="italic" onclick="add_decoration_tag('[i|', '|i]')">斜体</span><span class="underline" onclick="add_decoration_tag('[u|', '|u]')">下線</span><span class="linethrough" onclick="add_decoration_tag('[s|', '|s]')">取消</span><span class="rainbow" onclick="add_decoration_tag('[rainbow|', '|rainbow]')">虹色</span><span onclick="add_decoration_tag('[large|', '|large]')">大字</span><span onclick="add_decoration_tag('[small|', '|small]')">小字</span><a class="right" onclick="preview_open()">プレビュー</a><a onclick="talk()">発言</a></div>
 				</div>
 			</div>
 			<div id="fragment" class="hide">
 				<div class="header"><p>戦闘用・公開</p><p>公開</p><p>非公開</p></div>
 				<div class="container scroll"></div>
+				<div class="create_tab" onclick="change_create_mode()"><img src="strings/pic/up_fill.svg" width="36" height="36"></div>
+				<div class="create">
+					<div>
+						<div><input type="text" name="name" placeholder="フラグメント名" onchange="update_create_cost()"><input type="text" name="category" placeholder="カテゴリ" onchange="update_create_cost()"></div>
+						<textarea name="lore" placeholder="フレーバーテキスト" onchange="update_create_cost()"></textarea>
+						<label class="status"><div data-value="0">HP:</div><input type="range" name="hp" value="0" min="0" max="0" onchange="this.previousElementSibling.dataset.value=this.value; update_create_cost()"></label>
+						<label class="status"><div data-value="0">MP:</div><input type="range" name="mp" value="0" min="0" max="0" onchange="this.previousElementSibling.dataset.value=this.value; update_create_cost()"></label>
+						<label class="status"><div data-value="0">ATK:</div><input type="range" name="atk" value="0" min="0" max="0" onchange="this.previousElementSibling.dataset.value=this.value; update_create_cost()"></label>
+						<label class="status"><div data-value="0">TEC:</div><input type="range" name="tec" value="0" min="0" max="0" onchange="this.previousElementSibling.dataset.value=this.value; update_create_cost()"></label>
+						<label class="skill">スキル<select name="skill" onchange="update_create_cost()"><option value="">なし</option></select></label>
+						<p class="cost"></p>
+					</div>
+				</div>
 				<div class="footer">
 					<p class="status" data-hp="0" data-mp="0" data-atk="0" data-tec="0"></p>
 					<p class="update" onclick="update_fragments()">更新</p>
+					<p class="kins"></p>
 				</div>
 				<div class="desc scroll">
 					<p class="name"></p>
@@ -120,8 +135,8 @@
 					<p class="lore"></p>
 					<p class="status"></p>
 					<div class="skill">
-						<input type="text" class="name">
-						<input type="text" class="word" placeholder="スキル発動時台詞">
+						<input type="text" name="name" class="name">
+						<input type="text" name="word" class="word" placeholder="スキル発動時台詞">
 						<p class="lore"></p>
 						<p class="timing"></p>
 						<p class="effect"></p>
@@ -131,7 +146,7 @@
 						<div>
 							<img src="strings/pic/delete_2_line.svg" width="24" height="24" class="trash">
 							<img src="strings/pic/gift_line.svg" width="24" height="24" class="pass">
-							<label>&gt;&gt;Eno<input type="number" class="pass" onchange="desc_fragment.dataset.to = this.value"></label>
+							<label>&gt;&gt;Eno<input type="number" name="pass" class="pass" onchange="desc_fragment.dataset.to = this.value"></label>
 						</div>
 					</div>
 				</div>
@@ -142,7 +157,7 @@
 				<div class="log scroll"></div>
 			</div>
 			<div id="other" class="hide">
-				<label>Discord連携<input type="text" placeholder="ウェブフックURL" value="{{webhook}}"></label>
+				<label>Discord連携<input type="text" name="webhook" placeholder="ウェブフックURL" value="{{webhook}}"></label>
 				<div class="command">
 					<button type="button" class="my_profile">自分のプロフィール</button>
 					<button type="button" onclick="logout()">ログアウト</button>
@@ -156,18 +171,19 @@
 				<div class="characters scroll"></div>
 			</div>
 			<div id="profile" class="hide">
+				<h4><a onclick="close_profile()">Close</a></h4>
 				<div class="scroll">
-					<div class="data"><span class="eno"></span><span class="acronym right"></span><input type="color" class="color"></div>
+					<div class="data"><span class="eno"></span><span class="acronym right"></span><input type="color" name="color" class="color"></div>
 					<p class="fullname"></p>
-					<div class="name hide">発言名：<input type="text" value=""></div>
+					<div class="name hide">発言名：<input type="text" name="name" value=""></div>
 					<h4>Comment.</h4>
-					<input type="text" class="comment">
+					<input type="text" name="comment" class="comment">
 					<h4>Fragments.</h4>
 					<div class="fragments"></div>
 					<h4>Profile.</h4>
-					<div class="text profile"><p></p><textarea class="scroll hide" placeholder="フラグメントになっていないものを含むあなたのプロフィール。身長などを書いておくといいかもしれません。"></textarea></div>
+					<div class="text profile"><p></p><textarea name="profile" class="scroll hide" placeholder="フラグメントになっていないものを含むあなたのプロフィール。身長などを書いておくといいかもしれません。"></textarea></div>
 					<h4>Memo.</h4>
-					<div class="text memo"><p></p><textarea class="scroll hide" placeholder="プレイヤー補足欄。連絡先や明日の献立などを書いておくといいかもしれません。この欄に限り、SNSアカウントがリンクに変換されます。"></textarea></div>
+					<div class="text memo"><p></p><textarea name="memo" class="scroll hide" placeholder="プレイヤー補足欄。連絡先や明日の献立などを書いておくといいかもしれません。この欄に限り、SNSアカウントがリンクに変換されます。"></textarea></div>
 				</div>
 			</div>
 			<div id="play_battle" class="back hide">

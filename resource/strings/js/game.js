@@ -1,5 +1,6 @@
 var hold_fragment = null;
 var desc_fragment = null;
+var create_mode = false;
 var fomula_type = (() => {
 	const f = localStorage.getItem('fomula_type');
 	if (f === null) {
@@ -126,7 +127,9 @@ function load_timeline(container, num, start, from, to, location, word) {
 					lock = true;
 				}
 				else location.innerText = i['location'];
-				e.querySelector('.name').innerText = i['name'];
+				const name = e.querySelector('.name');
+				name.innerText = i['name'];
+				name.onclick = () => load_profile(i['from']);
 				e.querySelector('.eno').innerText = `Eno.${i['from']}`;
 				e.querySelector('.id').innerText = `id:${i['id']}`;
 				e.querySelector('.timestamp').innerText = i['timestamp'];
@@ -141,6 +144,7 @@ function load_timeline(container, num, start, from, to, location, word) {
 			update.onclick = () => {
 				const params = JSON.parse(select_tab_timeline.dataset.get);
 				load_timeline(document.querySelector('#chat .log'), params['num'], params['start'], params['from'], params['to'], params['location'], params['word']);
+				alertify.success('更新しました');
 			}
 			container.appendChild(update);
 		}
@@ -170,10 +174,13 @@ function load_fragments(container) {
 					status.dataset.tec = (f['tec']<0?'':'+')+f['tec'];
 					const s = e.querySelector('.skill');
 					if (f['skill']) {
-						s.dataset.name = f['skill']['name'];
+						s.dataset.id = f['skill']['id'];
 						s.dataset.defaultname = f['skill']['default_name'];
-						s.innerText = (s.dataset.name !== '') ? s.dataset.name : s.dataset.defaultname;
-						s.dataset.word = f['skill']['word'];
+						if (f['skill']['name'] !== null && f['skill']['name'] !== '') {
+							s.dataset.name = f['skill']['name'];
+							s.innerText = s.dataset.name;
+						} else s.innerText = s.dataset.defaultname;
+						if (f['skill']['word'] !== null && f['skill']['word'] !== '') s.dataset.word = f['skill']['word'];
 						s.dataset.lore = f['skill']['lore'];
 						s.dataset.timing = f['skill']['timing'];
 						s.dataset.effect = f['skill']['effect'].join(' ');
@@ -196,7 +203,12 @@ function load_fragments(container) {
 						hold_fragment = null;
 						update_status(container);
 					};
-					e.onclick = open_desc;
+					e.onclick = event => {
+						if (create_mode) {
+							e.classList.toggle('material');
+							reload_material();
+						} else open_desc(event.currentTarget);
+					};
 					e.ontouchmove = event => {
 						event.preventDefault();
 						for (let i = 0; i < event.changedTouches.length; ++i) {
@@ -211,6 +223,16 @@ function load_fragments(container) {
 				e.ondragenter = event => trade_fragment(event.currentTarget);
 				container.appendChild(e);
 			}
+			update_status(container);
+		}
+	})
+}
+function load_kins(container) {
+	ajax.open({
+		url: 'strings/get_has_kins',
+		ret: 'json',
+		ok: ret => {
+			container.innerText = `${ret}キンス`;
 		}
 	})
 }
@@ -271,6 +293,10 @@ function load_profile(eno) {
 			loading_profile_eno = Number(ret['eno'])
 		}
 	})
+}
+function close_profile() {
+	document.getElementById('profile').classList.add('hide');
+	loading_profile_eno = null;
 }
 function load_battle_reserve(container) {
 	ajax.open({
@@ -450,7 +476,7 @@ function preview_open() {
 	const form = document.querySelector('#chat>.talk');
 	const name = form.querySelector('[name=name]').value;
 	const word = form.querySelector('[name=word]').value;
-	const location= form.querySelector('[name=location]').checked;
+	const location = form.querySelector('[name=location]').checked;
 	const to = form.querySelector('[name=to]').value;
 	const e = document.querySelector('#chat>.preview');
 	const e_to = e.querySelector('.to');
@@ -462,9 +488,9 @@ function preview_open() {
 	}
 	const e_location = e.querySelector('.location');
 	if (location)
-		location.innerHTML = '<img src="strings/pic/lock_fill.svg" width="21" height="21">';
+		e_location.innerHTML = '<img src="strings/pic/lock_fill.svg" width="21" height="21">';
 	else
-		location.innerText = '現在地';
+		e_location.innerText = '現在地';
 	e.querySelector('.name').innerText = name;
 	e.querySelector('.eno').innerText = `Eno.${eno}`;
 	e.querySelector('.word').innerHTML = replace_decoration_tag(word);
@@ -570,8 +596,7 @@ function trade_fragment(target) {
 		}
 	}
 }
-function open_desc(event) {
-	const e = event.currentTarget;
+function open_desc(e) {
 	const desc = document.querySelector('#fragment>.desc');
 	if (desc_fragment !== e) {
 		desc_fragment = e;
@@ -588,9 +613,9 @@ function open_desc(event) {
 		} else {
 			desc_skill.classList.remove('hide');
 			const desc_skill_name = desc_skill.querySelector('.name');
-			desc_skill_name.value = skill.dataset.name;
+			desc_skill_name.value = skill.dataset.name !== undefined ? skill.dataset.name : '';
 			desc_skill_name.placeholder = skill.dataset.defaultname;
-			desc_skill.querySelector('.word').value = skill.dataset.word;
+			desc_skill.querySelector('.word').value = skill.dataset.word !== undefined ? skill.dataset.word : '';
 			desc_skill.querySelector('.lore').innerHTML = skill.dataset.lore;
 			desc_skill.querySelector('.timing').innerText = skill.dataset.timing;
 			const effect = desc_skill.querySelector('.effect');
@@ -673,8 +698,10 @@ function update_fragments() {
 		ret: 'json',
 		post: {change: change},
 		ok: ret => {
+			load_fragments(fragments);
+			load_kins(document.querySelector('#fragment .kins'));
+			close_desc();
 			let complate = true;
-			console.log(ret);
 			if (ret['pass_error'].length !== 0) {
 				alertify.warning(`『${ret['pass_error'].join('』の譲渡に失敗しました<br>『')}』の譲渡に失敗しました`);
 				complate = false;
@@ -684,8 +711,117 @@ function update_fragments() {
 				complate = false;
 			}
 			if (complate) alertify.success('フラグメントを更新しました');
-			close_desc();
+		}
+	})
+}
+function change_create_mode() {
+	create_mode ^= true;
+	const fragments = document.querySelector('#fragment .container');
+	const tab = document.querySelector('#fragment>.create_tab');
+	const update = document.querySelector('#fragment .update');
+	if (create_mode) {
+		// 合成モード開始
+		close_desc();
+		fragments.querySelectorAll('.trash,.pass').forEach(elem => elem.classList.remove('trash', 'pass'));
+		update.onclick = create_fragment;
+		update.innerText = '合成';
+		tab.classList.add('active');
+	} else {
+		// 合成モード終了
+		tab.classList.remove('active');
+		update.onclick = update_fragments;
+		update.innerText = '更新';
+		fragments.querySelectorAll('.material').forEach(elem => elem.classList.remove('material'));
+	}
+}
+function reload_material() {
+	const create = document.querySelector('#fragment>.create');
+	const hp = create.querySelector('[name="hp"]');
+	const mp = create.querySelector('[name="mp"]');
+	const atk = create.querySelector('[name="atk"]');
+	const tec = create.querySelector('[name="tec"]');
+	const skill = create.querySelector('[name="skill"]');
+	// 初期化
+	hp.min = 0;
+	hp.max = 0;
+	mp.min = 0;
+	mp.max = 0;
+	atk.min = 0;
+	atk.max = 0;
+	tec.min = 0;
+	tec.max = 0;
+	const option = document.createElement('option');
+	option.innerText = 'なし';
+	option.value = '';
+	skill.replaceChildren(option);
+	// 設定
+	document.querySelector('#fragment .container').querySelectorAll('.material').forEach(elem => {
+		// ステータス範囲
+		const status = elem.querySelector('.status');
+		hp.min = Math.min(hp.min, Number(status.dataset.hp));
+		hp.max = Math.max(hp.max, Number(status.dataset.hp));
+		mp.min = Math.min(mp.min, Number(status.dataset.mp));
+		mp.max = Math.max(mp.max, Number(status.dataset.mp));
+		atk.min = Math.min(atk.min, Number(status.dataset.atk));
+		atk.max = Math.max(atk.max, Number(status.dataset.atk));
+		tec.min = Math.min(tec.min, Number(status.dataset.tec));
+		tec.max = Math.max(tec.max, Number(status.dataset.tec));
+		// スキル
+		const s = elem.querySelector('.skill');
+		if (!s.classList.contains('none')) {
+			const option = document.createElement('option');
+			option.value = s.dataset.id;
+			option.innerText = s.dataset.defaultname;
+			skill.appendChild(option);
+		}
+	});
+	update_create_cost();
+}
+function update_create_cost() {
+	const create = document.querySelector('#fragment>.create');
+	let cost = 0;
+	cost += create.querySelector('[name="name"]').value.length * 2;
+	create.querySelector('[name="lore"]').value.split(/\r|\n|\r\n/).forEach(line => cost += Math.floor((line.length - 1) / 30 + 1) * 4);
+	cost += Number(create.querySelector('[name="hp"]').value) * 5;
+	cost += Number(create.querySelector('[name="mp"]').value) * 5;
+	cost += Number(create.querySelector('[name="atk"]').value) * 15;
+	cost += Number(create.querySelector('[name="tec"]').value) * 15;
+	if (create.querySelector('[name="skill"]').value !== "") cost += 30;
+	const category = create.querySelector('[name="category"]').value;
+	let find = false;
+	document.querySelector('#fragment .container').querySelectorAll('.material').forEach(elem => {
+		if (elem.dataset.category === category) {
+			find = true;
+			return
+		}
+	});
+	if (!find) cost += 10;
+	create.querySelector('.cost').dataset.cost = cost;
+}
+function create_fragment() {
+	let material = [];
+	const create = document.querySelector('#fragment>.create');
+	const category = create.querySelector('[name="category"]').value;
+	const name = create.querySelector('[name="name"]').value;
+	const lore = create.querySelector('[name="lore"]').value;
+	const hp =  Number(create.querySelector('[name="hp"]').value);
+	const mp =  Number(create.querySelector('[name="mp"]').value);
+	const atk = Number(create.querySelector('[name="atk"]').value);
+	const tec = Number(create.querySelector('[name="tec"]').value);
+	const skill = Number(create.querySelector('[name="skill"]').value);
+	const fragments = document.querySelector('#fragment .container');
+	fragments.querySelectorAll('.material').forEach(elem => {
+		material.push(Number(elem.dataset.slot));
+	});
+	const params = {material: material, category: category, name: name, lore: lore, hp: hp, mp: mp, atk: atk, tec: tec, skill: skill!==0?skill:null};
+	ajax.open({
+		url: 'strings/create_fragment',
+		ret: 'json',
+		post: params,
+		ok: ret => {
+			alertify.success(`${ret}キンスを消費し『${name}』を作成しました`);
 			load_fragments(fragments);
+			load_kins(document.querySelector('#fragment .kins'));
 		}
 	})
 }
@@ -722,37 +858,55 @@ function update_profile(type, elem) {
 
 // 戦闘ログ
 function send_battle(to, plan) {
-	ajax.open({
-		url: 'strings/send_battle',
-		ret: 'text',
-		post: {to: to, plan: plan},
-		ok: ret => {
-			if (plan != 0) alertify.success('Eno.' + to + ' ' + ret + 'に勝つつもりで戦闘を挑みました');
-			else alertify.success('Eno.' + to + ' ' + ret + 'に負けるつもりで戦闘を挑みました');
-		}
-	})
+	alertify.confirm(`Eno.${to} に<span class="underline">${plan!=0?'勝つつもり':'負けるつもり'}</span>で戦闘を仕掛けます。<br>よろしいですか？`, () => {
+		ajax.open({
+			url: 'strings/send_battle',
+			ret: 'text',
+			post: {to: to, plan: plan},
+			ok: ret => {
+				if (plan != 0) alertify.success('Eno.' + to + ' ' + ret + 'に勝つつもりで戦闘を挑みました');
+				else alertify.success('Eno.' + to + ' ' + ret + 'に負けるつもりで戦闘を挑みました');
+			}
+		});
+	});
 }
 function receive_battle(from, plan) {
-	ajax.open({
-		url: 'strings/receive_battle',
-		ret: 'json',
-		post: {from: from, plan: plan},
-		ok: ret => {
-			if (ret['result'] === 'omission') {
-				alertify.success(ret['content']);
-			} else {
-				battle = new Battle(ret[0]);
-				console.log(ret[1]);
-				if (ret[0]['result'] === 'right') {
-					alertify.success(`フラグメント『${ret[1]['name']}』を獲得しました`);
-				} else if (ret[0]['result'] === 'left') {
-					alertify.warning(`フラグメント『${ret[1]['name']}』を喪失しました`);
+	let plan_text = '';
+	switch (plan) {
+		case 0: plan_text = `Eno.${from} の戦闘を<span class="underline">負けるつもり</span>で受けます。`; break;
+		case 1: plan_text = `Eno.${from} の戦闘を<span class="underline">勝つつもり</span>で受けます。`; break;
+		default: plan_text = `Eno.${from} の戦闘から<span class="underline">逃走</span>します。`; break;
+	}
+	alertify.confirm(`${plan_text}<br>よろしいですか？`, () => {
+		ajax.open({
+			url: 'strings/receive_battle',
+			ret: 'json',
+			post: {from: from, plan: plan},
+			ok: ret => {
+				let alert = `Eno.${from} との戦闘`;
+				let f;
+				switch (ret['result']) {
+					case 'left': alert += `に敗北しました`; f = alertify.warning; break;
+					case 'right': alert += `に勝利しました`; f = alertify.success; break;
+					case 'draw': alert += `を引き分けました`; f = alertify.message; break;
+					case 'escape': alert += `から逃走しました`; f = alertify.message; break;
 				}
-				load_battle_logs(document.querySelector('#battle>.log'), eno);
-				load_fragments(document.querySelector('#fragment .container'), document.querySelector('#fragment .container.trash'));
+				if (ret['fragment'] !== undefined) {
+					alert += `<br>フラグメント『${ret['fragment']}』を`;
+					switch (ret['result']) {
+						case 'left': alert += `喪失しました`; break;
+						case 'right': alert += `獲得しました`; break;
+					}
+					load_fragments(document.querySelector('#fragment .container'), document.querySelector('#fragment .container.trash'));
+				}
+				f(alert);
+				if (ret['log'] !== undefined) {
+					battle = new Battle(ret['log']);
+					load_battle_logs(document.querySelector('#battle>.log'), eno);
+				}
 			}
-		}
-	})
+		});
+	});
 }
 function cancel_battle(to) {
 	ajax.open({
@@ -780,7 +934,6 @@ window.addEventListener('load', async () => {
 	// ========================
 	// 機能の設定
 	// ========================
-	alertify.success(`Eno.${eno} でログインしました。`);
 	document.querySelectorAll('#footer>.tab').forEach(elem => {
 		elem.onclick = event => view_window(event.currentTarget);
 	});
@@ -934,7 +1087,7 @@ window.addEventListener('load', async () => {
 
 	// フラグメント
 	load_fragments(document.querySelector('#fragment .container'));
-	setTimeout(update_status,1000,document.querySelector('#fragment .container'));
+	load_kins(document.querySelector('#fragment .kins'))
 
 	// 戦闘
 	load_battle_reserve(document.querySelector('#battle .reserve'));

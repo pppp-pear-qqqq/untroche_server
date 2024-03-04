@@ -32,6 +32,7 @@
 			<div>
 				<p>Eno.<span class="eno">{{c.eno}}</span> {{c.name}}</p>
 				<label>現在地 <input type="text" name="location" value="{{c.location}}"></label>
+				<p>{{c.kins}}キンス</p>
 				<button type="button" onclick="update_character(this.parentNode)">更新</button>
 			</div>
 			{% endfor %}

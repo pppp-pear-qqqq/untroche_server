@@ -89,6 +89,9 @@
 		font-weight: bolder;
 		grid-column: 1;
 	}
+	>p.name {
+		cursor: pointer;
+	}
 	>.eno {
 		width: 4em;
 		text-align: right;
@@ -138,6 +141,7 @@
 			flex-direction: column;
 			gap: 4px;
 			user-select: none;
+			-webkit-user-select: none;
 			>p {
 				width: 30em;
 			}
@@ -281,6 +285,7 @@
 			flex-direction: column;
 			transition: opacity 0s 1ms, filter 200ms;
 			user-select: none;
+			-webkit-user-select: none;
 			>.name {
 				border-bottom: 1px dashed #767676;
 				width: 16em;
@@ -324,6 +329,93 @@
 			display: block;
 			content: url('../pic/gift_line.svg');
 		}
+		>.fragment.material>img {
+			display: block;
+			content: url('../pic/box_3_line.svg');
+		}
+	}
+	>.create {
+		height: 0;
+		overflow: hidden;
+		transition: height 400ms;
+		>div {
+			margin: auto;
+			flex-direction: column;
+			label>* {
+				margin-left: 6px;
+			}
+			div {
+				justify-content: space-between;
+				>input {
+					border-style: dashed none none none;
+				}
+			}
+			input[name="name"] {
+				width: 16em;
+			}
+			input[name="category"] {
+				width: 8em;
+			}
+			textarea {
+				display: block;
+				width: 30em;
+				height: 4lh;
+				border-style: dashed none;
+				resize: none;
+				overflow: hidden;
+			}
+			.status {
+				display: flex;
+				justify-content: space-between;
+				div {
+					width: 50px;
+					justify-content: space-between;
+				}
+				div::after {
+					content: attr(data-value);
+				}
+				input {
+					position: relative;
+					width: 21em;
+					margin: 1px 2em;
+					background: #404040;
+				}
+				input::before {
+					content: attr(min);
+					position: absolute;
+					left: -4px;
+					transform: translate(-100%);
+				}
+				input::after {
+					content: attr(max);
+					position: absolute;
+					right: -4px;
+					transform: translate(100%);
+				}
+			}
+			.skill {
+				select {
+					width: 16em;
+				}
+			}
+			.cost::before {
+				content: '消費キンス = ' attr(data-cost);
+			}
+		}
+	}
+	>.create_tab {
+		justify-content: center;
+		transition: filter 200ms;
+	}
+	>.create_tab:hover {
+		filter: brightness(1.5);
+	}
+	>.create_tab.active {
+		transform: rotate(0.5turn);
+		+.create {
+			border-top: 1px dashed #767676;
+			height: 12lh;
+		}
 	}
 	>.header, >.footer {
 		display: grid;
@@ -346,14 +438,11 @@
 			content: 'HP: ' attr(data-hp) ', MP: ' attr(data-mp) ', ATK: ' attr(data-atk) ', TEC: ' attr(data-tec);
 		}
 		>.update {
-			grid-column: 2 / -1;
 			user-select: none;
+			-webkit-user-select: none;
 		}
-		>.update:hover, >.trash:hover {
+		>.update:hover {
 			filter: brightness(1.5);
-		}
-		>.trash.open {
-			background-color: #767676;
 		}
 	}
 	>.desc {
@@ -400,6 +489,7 @@
 				width: 30em;
 				overflow-x: auto;
 				user-select: none;
+				-webkit-user-select: none;
 				cursor: pointer;
 			}
 		}
@@ -544,6 +634,7 @@
 			>* {
 				display: flex;
 				width: fit-content;
+				width: -moz-fit-content;
 				gap: 6px;
 			}
 			>.win::before {
@@ -642,6 +733,7 @@
 		gap: 8px;
 		>.range {
 			transition: width 600ms;
+			text-align: center;
 		}
 		>.acronym::before {
 			content: '[';

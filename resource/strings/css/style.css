@@ -46,6 +46,12 @@ html {
 div {
 	display: flex;
 }
+div.alertify {
+	display: block;
+	div {
+		display: block;
+	}
+}
 a {
 	text-decoration-line: underline;
 	text-decoration: color solid 1px;
@@ -61,12 +67,15 @@ a:link {
 a:visited {
 	color: #ffaaff;
 }
-input, textarea {
+input, textarea, select {
 	background: none;
 	color: inherit;
 	font: 14px 'Noto Sans JP', sans-serif;
 	border-style: solid;
 	border-width: 1px;
+	* {
+		color: initial;
+	}
 }
 input[type=checkbox] {
 	display: none;
@@ -119,8 +128,8 @@ p.right,span.right,a.right {
 .rainbow{
 	font-weight: bolder;
 	background: linear-gradient(to right, #ffaaff, #ffffaa, #aaffff, #ffaaff) 0% center/200%;
-	background-clip: text;
 	-webkit-background-clip: text;
+	background-clip: text;
 	-webkit-text-fill-color: transparent;
 	animation: rainbow 12s linear infinite;
 }

@@ -3,7 +3,7 @@ use std::{collections::HashMap, fs};
 use actix_web::{
     error::{
         ErrorBadRequest,
-        ErrorInternalServerError
+        ErrorInternalServerError, ErrorServiceUnavailable
     },
     web,
     HttpRequest
@@ -30,6 +30,13 @@ pub async fn next(req: HttpRequest, info: web::Json<NextData>) -> Result<String,
         .ok_or(ErrorBadRequest("ログインセッションがありません"))?;
     // データベースに接続
     let conn = common::open_database()?;
+    if let Err(state) = common::check_server_state(&conn)? {
+        match state.as_str() {
+            "maintenance" => return Err(ErrorServiceUnavailable(common::SERVER_MAINTENANCE_TEXT)),
+            "end" => return Err(ErrorServiceUnavailable(common::SERVER_END_TEXT)),
+            _ => return Err(ErrorInternalServerError(common::SERVER_UNDEFINED_TEXT))
+        }
+    }
     // Enoを取得
     let eno = common::session_to_eno(&conn, session.value())?;
     // シーン情報取得
