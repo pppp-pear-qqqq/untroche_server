@@ -64,7 +64,9 @@ function update_fragment(form, make) {
 	params['mp'] = Number(params['mp']);
 	params['atk'] = Number(params['atk']);
 	params['tec'] = Number(params['tec']);
-	params['skill'] = Number(params['skill']);
+	if (params['skill'] === '' || params['skill'] === '0' || params['skill'] === undefined || params['skill'] === null)
+		params['skill'] = null;
+	else params['skill'] = Number(params['skill']);
 	ajax.open({
 		url: 'admin/update_fragment',
 		ret: 'text',

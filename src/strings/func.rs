@@ -507,15 +507,24 @@ pub(super) async fn get_fragments(req: HttpRequest) -> Result<web::Json<Vec<Frag
             // ステータスの原型
             let status: Vec<u8> = row.get(4)?;
             // スキルの有無を判定・整形
-            let skill = if let Some(id) = row.get(5)? {
+            let skill = if let (Some(id), Some(name), Some(lore), Some(timing), Some(effect)) = (row.get(5)?, row.get(8)?, row.get(9)?, row.get(10)?, row.get(11)?) {
+                // Some(Skill { 
+                //     id,
+                //     name: row.get(6)?,
+                //     word: row.get(7)?,
+                //     default_name: row.get::<_, Option<_>>(8)?.ok_or(rusqlite::Error::InvalidColumnType(8, "skill.name".to_string(), Type::Null))?,
+                //     lore: row.get::<_, Option<_>>(9)?.ok_or(rusqlite::Error::InvalidColumnType(9, "skill.lore".to_string(), Type::Null))?,
+                //     timing: battle::Timing::from(row.get::<_, Option<_>>(10)?.ok_or(rusqlite::Error::InvalidColumnType(10, "skill.type".to_string(), Type::Null))?),
+                //     effect: battle::Command::convert(row.get::<_, Option<_>>(11)?.ok_or(rusqlite::Error::InvalidColumnType(11, "skill.effect".to_string(), Type::Null))?).map_err(|_| rusqlite::Error::InvalidColumnType(0, "skill.effect".to_string(), Type::Text))?,
+                // })
                 Some(Skill { 
                     id,
                     name: row.get(6)?,
                     word: row.get(7)?,
-                    default_name: row.get(8)?,
-                    lore: row.get(9)?,
-                    timing: battle::Timing::from(row.get(10)?),
-                    effect: battle::Command::convert(row.get(11)?).map_err(|_| rusqlite::Error::InvalidColumnType(0, "skill.effect".to_string(), Type::Text))?,
+                    default_name: name,
+                    lore,
+                    timing: battle::Timing::from(timing),
+                    effect: battle::Command::convert(effect).map_err(|_| rusqlite::Error::InvalidColumnType(0, "skill.effect".to_string(), Type::Text))?,
                 })
             } else { None };
             // 取得返却
@@ -827,7 +836,7 @@ pub(super) async fn create_fragment(req: HttpRequest, info: web::Json<CreateFrag
         if !predicate.has_skill {
             return Err(ErrorBadRequest("設定しようとしているスキルは素材に含まれていません"));
         }
-        println!("hp: {}..{}, mp: {}..{}, atk: {}..{}, tec: {}..{}", predicate.hp.start, predicate.hp.end, predicate.mp.start, predicate.mp.end, predicate.atk.start, predicate.atk.end, predicate.tec.start, predicate.tec.end);
+        // println!("hp: {}..{}, mp: {}..{}, atk: {}..{}, tec: {}..{}", predicate.hp.start, predicate.hp.end, predicate.mp.start, predicate.mp.end, predicate.atk.start, predicate.atk.end, predicate.tec.start, predicate.tec.end);
         if !(predicate.hp.contains(&info.hp) && predicate.mp.contains(&info.mp) && predicate.atk.contains(&info.atk) && predicate.tec.contains(&info.tec)) {
             return Err(ErrorBadRequest("ステータスが素材の範囲に収まっていません"));
         }
