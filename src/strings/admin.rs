@@ -192,6 +192,15 @@ pub async fn index(pass: web::Query<Password>) -> Result<HttpResponse, actix_web
     }().map_err(|err| ErrorInternalServerError(err))
 }
 
+fn html_special_chars_reverce(text: &str) -> String {
+    text
+        .replace("&amp;", "&")
+        .replace("&#039;", "'")
+        .replace("&quot;", "\"")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+}
+
 #[derive(Deserialize)]
 pub(super) struct Sql {
     sql: String,
@@ -245,8 +254,7 @@ pub(super) async fn update_skill(req: HttpRequest, info: web::Json<SkillData>) -
     check_server_password(&conn, password.value())?;
     // 処理開始
     let re = Regex::new("\r|\n|\r\n").map_err(|err| ErrorInternalServerError(err))?;
-    let lore = common::html_special_chars(info.lore.clone());
-    let lore = re.replace_all(&lore, "<br>");
+    let lore = html_special_chars_reverce(&re.replace_all(&info.lore, "<br>").to_string());
     let mut command: Vec<u8> = Vec::new();
     for s in info.effect.split(&[' ', ',']) {
         let c = match s {
@@ -336,8 +344,7 @@ pub(super) async fn update_fragment(req: HttpRequest, info: web::Json<FragmentDa
     check_server_password(&conn, password.value())?;
     // 処理開始
     let re = Regex::new("\r|\n|\r\n").map_err(|err| ErrorInternalServerError(err))?;
-    let lore = common::html_special_chars(info.lore.clone());
-    let lore = re.replace_all(&lore, "<br>");
+    let lore = html_special_chars_reverce(&re.replace_all(&info.lore, "<br>").to_string());
     let status = [
         (info.hp >> 8) as u8, info.hp as u8,
         (info.mp >> 8) as u8, info.mp as u8,

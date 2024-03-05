@@ -447,6 +447,7 @@ function next(input,this_elem,strict) {
 			explore_ok = true;
 			load_location();
 			load_fragments(document.querySelector('#fragment .container'), document.querySelector('#fragment .container.trash'));
+			load_kins(document.querySelector('#fragment .kins'));
 			explore();
 		}
 	})
@@ -775,11 +776,11 @@ function reload_material() {
 			skill.appendChild(option);
 		}
 	});
-	update_create_cost();
+	calc_cost();
 }
-function update_create_cost() {
+function calc_cost() {
 	const create = document.querySelector('#fragment>.create');
-	let cost = 0;
+	let cost = 30;
 	cost += create.querySelector('[name="name"]').value.length * 2;
 	create.querySelector('[name="lore"]').value.split(/\r|\n|\r\n/).forEach(line => cost += Math.floor((line.length - 1) / 30 + 1) * 4);
 	cost += Number(create.querySelector('[name="hp"]').value) * 5;
@@ -790,6 +791,7 @@ function update_create_cost() {
 	const category = create.querySelector('[name="category"]').value;
 	let find = false;
 	document.querySelector('#fragment .container').querySelectorAll('.material').forEach(elem => {
+		cost -= 10;
 		if (elem.dataset.category === category) {
 			find = true;
 			return

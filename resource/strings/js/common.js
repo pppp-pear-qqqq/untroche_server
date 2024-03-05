@@ -56,7 +56,8 @@ function make_skillfomula(array) {
 			case '逃走ライン': effect.push(`${e}(${stack.pop()})`); break;
 			case '間合': effect.push(`${e}(${stack.pop()}, ${stack.pop()})`); break;
 			case '中断':
-			case '対象変更': effect.push(e); break;
+			case '対象変更':
+			case '中断時終了': effect.push(e); break;
 			default: stack.push(e);
 		}
 	});

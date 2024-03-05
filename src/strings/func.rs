@@ -122,7 +122,7 @@ pub(super) async fn send_chat(req: HttpRequest, info: web::Json<SendChatData>) -
     let session =  req.cookie("login_session")
         .ok_or(ErrorBadRequest("ログインセッションがありません"))?;
     // 発言内容をエスケープ
-    let mut word = common::html_special_chars(info.word.clone());
+    let mut word = common::html_special_chars(&info.word);
     // 入力情報が正しい長さであることを確認
     if info.name.graphemes(true).count() <= 20 && word.graphemes(true).count() <= 600 {
         let handle = if let Some(to) = &info.to {
@@ -144,7 +144,7 @@ pub(super) async fn send_chat(req: HttpRequest, info: web::Json<SendChatData>) -
         let (color, location): ([u8; 3], String) = conn.query_row("SELECT color,location FROM character WHERE eno=?1", params![eno], |row|Ok((row.get(0)?, row.get(1)?)))
             .map_err(|err| ErrorInternalServerError(err))?;
         // タグを置換
-        word = common::replace_tag(word, eno, false).map_err(|err| ErrorInternalServerError(err))?;
+        word = common::replace_tag(&word, eno, false).map_err(|err| ErrorInternalServerError(err))?;
         // 発言をデータベースに格納
         conn.execute(
             "INSERT INTO timeline(from_eno,to_eno,location,color,name,word) VALUES(?1,?2,?3,?4,?5,?6)",
@@ -508,16 +508,7 @@ pub(super) async fn get_fragments(req: HttpRequest) -> Result<web::Json<Vec<Frag
             let status: Vec<u8> = row.get(4)?;
             // スキルの有無を判定・整形
             let skill = if let (Some(id), Some(name), Some(lore), Some(timing), Some(effect)) = (row.get(5)?, row.get(8)?, row.get(9)?, row.get(10)?, row.get(11)?) {
-                // Some(Skill { 
-                //     id,
-                //     name: row.get(6)?,
-                //     word: row.get(7)?,
-                //     default_name: row.get::<_, Option<_>>(8)?.ok_or(rusqlite::Error::InvalidColumnType(8, "skill.name".to_string(), Type::Null))?,
-                //     lore: row.get::<_, Option<_>>(9)?.ok_or(rusqlite::Error::InvalidColumnType(9, "skill.lore".to_string(), Type::Null))?,
-                //     timing: battle::Timing::from(row.get::<_, Option<_>>(10)?.ok_or(rusqlite::Error::InvalidColumnType(10, "skill.type".to_string(), Type::Null))?),
-                //     effect: battle::Command::convert(row.get::<_, Option<_>>(11)?.ok_or(rusqlite::Error::InvalidColumnType(11, "skill.effect".to_string(), Type::Null))?).map_err(|_| rusqlite::Error::InvalidColumnType(0, "skill.effect".to_string(), Type::Text))?,
-                // })
-                Some(Skill { 
+                Some(Skill {
                     id,
                     name: row.get(6)?,
                     word: row.get(7)?,
@@ -745,20 +736,34 @@ struct CreateFragmentPredicate {
     has_skill: bool,
 }
 pub(super) async fn create_fragment(req: HttpRequest, info: web::Json<CreateFragmentData>) -> Result<Json<i32>, actix_web::Error> {
-    // カテゴリ制限
-    match info.category.as_str() {
-        "名前" | 
-        "世界観" |
-        "秘匿" | 
-        "身代わり" => return Err(ErrorBadRequest(format!("{}カテゴリのフラグメントを作成することはできません", info.category))),
-        _ => (),
-    }
-    // 文字数制限
-    if info.name.grapheme_indices(true).count() > 16 {
-        return Err(ErrorBadRequest("フラグメント名は16文字以内に設定してください"));
-    }
-    if info.lore.grapheme_indices(true).count() > 120 || info.lore.lines().count() > 4 {
-        return Err(ErrorBadRequest("説明文は4行120文字以内に設定してください"));
+    if info.force != Some(true) {
+        // カテゴリ制限
+        match info.category.as_str() {
+            "名前" | 
+            "世界観" |
+            "秘匿" | 
+            "身代わり" => return Err(ErrorBadRequest(format!("{}カテゴリのフラグメントを作成することはできません", info.category))),
+            _ => (),
+        }
+        // 文字数制限
+        if !(1..=8).contains(&info.category.grapheme_indices(true).count()) {
+            return Err(ErrorBadRequest("カテゴリは1文字以上8文字以下に設定してください"));
+        }
+        if !(1..=16).contains(&info.name.grapheme_indices(true).count()) {
+            return Err(ErrorBadRequest("フラグメント名は1文字以上16文字以下に設定してください"));
+        }
+        if info.lore.grapheme_indices(true).count() > 120 || info.lore.lines().count() > 4 {
+            return Err(ErrorBadRequest("説明文は4行120文字以内に設定してください"));
+        }
+        // マテリアル個数制限
+        if info.material.len() < 2 {
+            return Err(ErrorBadRequest("二つ以上のフラグメントを素材にする必要があります"));
+        }
+    } else {
+        // マテリアル個数制限
+        if info.material.len() == 0 {
+            return Err(ErrorBadRequest("一つ以上のフラグメントを素材にする必要があります"));
+        }
     }
     // ログインセッションを取得
     let session =  req.cookie("login_session")
@@ -775,6 +780,9 @@ pub(super) async fn create_fragment(req: HttpRequest, info: web::Json<CreateFrag
     }
     // Enoを取得
     let eno = common::session_to_eno(&conn, session.value())?;
+    // 説明文整形
+    let lore = common::replace_tag(&common::html_special_chars(&info.lore), eno, false)
+        .map_err(|err| ErrorInternalServerError(err))?;
     // フラグメントの一覧を取得
     let result = || -> Result<_, rusqlite::Error> {
         let mut stmt = conn.prepare("SELECT slot,category,name,lore,status,skill FROM fragment WHERE eno=?1")?;
@@ -791,7 +799,7 @@ pub(super) async fn create_fragment(req: HttpRequest, info: web::Json<CreateFrag
         Ok(result)
     }().map_err(|err| ErrorInternalServerError(err))?;
     // コスト
-    let mut cost = 10;
+    let mut cost = 30;
     // 判定
     if info.force != Some(true) {
         let mut predicate = CreateFragmentPredicate{
@@ -842,12 +850,13 @@ pub(super) async fn create_fragment(req: HttpRequest, info: web::Json<CreateFrag
         }
     }
     // 名前一文字につき2
-    cost += info.name.len() as i32 * 2;
+    cost += info.name.grapheme_indices(true).count() as i32 * 2;
     // 計算だとhp,mp*3==atk,tecだった　それを*5
     cost += info.hp as i32 * 5;
     cost += info.mp as i32 * 5;
     cost += info.atk as i32 * 15;
     cost += info.tec as i32 * 15;
+    // スキルが設定されているなら+30
     if info.skill != None {
         cost += 30;
     }
@@ -855,6 +864,8 @@ pub(super) async fn create_fragment(req: HttpRequest, info: web::Json<CreateFrag
     for i in info.lore.lines() {
         cost += ((i.grapheme_indices(true).count() as i32 - 1) / 30 + 1) * 4;
     }
+    // 素材の数*10だけ割引
+    cost -= info.material.len() as i32 * 10;
     // キンス取得
     let kins: i32 = conn.query_row("SELECT kins FROM character WHERE eno=?1", params![eno], |row| Ok(row.get(0)?))
         .map_err(|err| ErrorInternalServerError(err))?;
@@ -884,7 +895,7 @@ pub(super) async fn create_fragment(req: HttpRequest, info: web::Json<CreateFrag
                     slot,
                     info.category,
                     info.name,
-                    info.lore,
+                    lore,
                     status,
                     info.skill,
                 ]
@@ -974,8 +985,8 @@ pub(super) async fn get_profile(req: HttpRequest, info: web::Query<GetProfileDat
             ))
         ).map_err(|_| ErrorBadRequest("指定したキャラクターが存在しません"))?;
     // タグを置換
-    let replaced_content = common::replace_tag(content.clone(), info.eno, false).map_err(|err| ErrorInternalServerError(err))?;
-    let replaced_memo = common::replace_tag(memo.clone(), info.eno, true).map_err(|err| ErrorInternalServerError(err))?;
+    let replaced_content = common::replace_tag(&content, info.eno, false).map_err(|err| ErrorInternalServerError(err))?;
+    let replaced_memo = common::replace_tag(&memo, info.eno, true).map_err(|err| ErrorInternalServerError(err))?;
     // フラグメントを取得
     let mut stmt = conn.prepare("SELECT slot,name,category,lore FROM fragment WHERE eno=?1 ORDER BY slot ASC")
         .map_err(|err| ErrorInternalServerError(err))?;
@@ -1080,14 +1091,14 @@ pub(super) async fn update_profile(req: HttpRequest, info: web::Json<UpdateProfi
                 return Err(ErrorBadRequest("プロフィールは800文字以下に設定してください"));
             }
             sql += "character_profile SET content=?1";
-            SqliteType::Text(common::html_special_chars(info.value.clone()))
+            SqliteType::Text(common::html_special_chars(&info.value))
         },
         "memo" => {
             if info.value.graphemes(true).count() > 200 {
                 return Err(ErrorBadRequest("メモは200文字以下に設定してください"));
             }
             sql += "character_profile SET memo=?1";
-            SqliteType::Text(common::html_special_chars(info.value.clone()))
+            SqliteType::Text(common::html_special_chars(&info.value))
         },
         "webhook" => {
             sql += "user SET webhook=?1";
@@ -1121,14 +1132,14 @@ pub(super) async fn update_profile(req: HttpRequest, info: web::Json<UpdateProfi
     match info.data_type.as_str() {
         "profile" => {
             if let SqliteType::Text(v) = value {
-                Ok(common::replace_tag(v, eno, false).map_err(|err| ErrorBadRequest(err))?)
+                Ok(common::replace_tag(&v, eno, false).map_err(|err| ErrorBadRequest(err))?)
             } else {
                 Err(ErrorInternalServerError("なんかおかしなことになっています"))
             }
         }
         "memo" => {
             if let SqliteType::Text(v) = value {
-                Ok(common::replace_tag(v, eno, true).map_err(|err| ErrorBadRequest(err))?)
+                Ok(common::replace_tag(&v, eno, true).map_err(|err| ErrorBadRequest(err))?)
             } else {
                 Err(ErrorInternalServerError("なんかおかしなことになっています"))
             }
@@ -1472,36 +1483,23 @@ pub(super) async fn get_location(req: HttpRequest, info: web::Query<GetLocationD
             _ => return Err(ErrorInternalServerError(common::SERVER_UNDEFINED_TEXT))
         }
     }
-    if let Some(location) = &info.location {
-        // 説明文を取得
-        match conn.query_row("SELECT lore FROM location WHERE name=?1", params![location], |row| Ok(row.get(0)?)) {
-            Ok(lore) => Ok(web::Json(Location { name: location.to_string(), lore })),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(web::Json(Location { name: location.to_string(), lore: Some("この場所の情報はない。".to_string()) })),
-            Err(err) => Err(ErrorInternalServerError(err)),
-        }
+    // ロケーション名を取得
+    let name = if let Some(location) = &info.location {
+        location.clone()
     } else {
         // ログインセッションを取得
         let session =  req.cookie("login_session")
             .ok_or(ErrorBadRequest("ログインセッションがありません"))?;
         // Enoを取得
         let eno = common::session_to_eno(&conn, session.value())?;
-        // 取得・返却
-        match conn.query_row(
-            "SELECT name,lore FROM location WHERE name=(SELECT location FROM character WHERE eno=?1)",
-            params![eno],
-            |row| Ok(Location {
-                name: row.get(0)?,
-                lore: row.get(1)?,
-            })
-        ) {
-            Ok(location) => {
-                if location.lore != None {
-                    Ok(web::Json(location))
-                } else {
-                    Ok(web::Json(Location { name: location.name, lore: Some("この場所の情報はない。".to_string()) }))
-                }
-            }
-            Err(err) => Err(ErrorInternalServerError(err)),
-        }
+        // ロケーション名を取得
+        conn.query_row("SELECT location FROM character WHERE eno=?1", params![eno], |row| Ok(row.get(0)?))
+            .map_err(|err| ErrorInternalServerError(err))?
+    };
+    // 説明文を取得
+    match conn.query_row("SELECT lore FROM location WHERE name=?1", params![name], |row| Ok(row.get(0)?)) {
+        Ok(lore) => Ok(web::Json(Location { name: name.to_string(), lore })),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(web::Json(Location { name: name.to_string(), lore: Some("この場所の情報はない。".to_string()) })),
+        Err(err) => Err(ErrorInternalServerError(err)),
     }
 }

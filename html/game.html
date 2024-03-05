@@ -115,13 +115,13 @@
 				<!-- <div class="create_tab" onclick="change_create_mode()"><img src="strings/pic/up_fill.svg" width="36" height="36"></div> -->
 				<div class="create">
 					<div>
-						<div><input type="text" name="name" placeholder="フラグメント名" onchange="update_create_cost()"><input type="text" name="category" placeholder="カテゴリ" onchange="update_create_cost()"></div>
-						<textarea name="lore" placeholder="フレーバーテキスト" onchange="update_create_cost()"></textarea>
-						<label class="status"><div data-value="0">HP:</div><input type="range" name="hp" value="0" min="0" max="0" onchange="this.previousElementSibling.dataset.value=this.value; update_create_cost()"></label>
-						<label class="status"><div data-value="0">MP:</div><input type="range" name="mp" value="0" min="0" max="0" onchange="this.previousElementSibling.dataset.value=this.value; update_create_cost()"></label>
-						<label class="status"><div data-value="0">ATK:</div><input type="range" name="atk" value="0" min="0" max="0" onchange="this.previousElementSibling.dataset.value=this.value; update_create_cost()"></label>
-						<label class="status"><div data-value="0">TEC:</div><input type="range" name="tec" value="0" min="0" max="0" onchange="this.previousElementSibling.dataset.value=this.value; update_create_cost()"></label>
-						<label class="skill">スキル<select name="skill" onchange="update_create_cost()"><option value="">なし</option></select></label>
+						<div><input type="text" name="name" placeholder="フラグメント名" onchange="calc_cost()"><input type="text" name="category" placeholder="カテゴリ" onchange="calc_cost()"></div>
+						<textarea name="lore" placeholder="フレーバーテキスト" onchange="calc_cost()"></textarea>
+						<label class="status"><div data-value="0">HP:</div><input type="range" name="hp" value="0" min="0" max="0" onchange="this.previousElementSibling.dataset.value=this.value; calc_cost()"></label>
+						<label class="status"><div data-value="0">MP:</div><input type="range" name="mp" value="0" min="0" max="0" onchange="this.previousElementSibling.dataset.value=this.value; calc_cost()"></label>
+						<label class="status"><div data-value="0">ATK:</div><input type="range" name="atk" value="0" min="0" max="0" onchange="this.previousElementSibling.dataset.value=this.value; calc_cost()"></label>
+						<label class="status"><div data-value="0">TEC:</div><input type="range" name="tec" value="0" min="0" max="0" onchange="this.previousElementSibling.dataset.value=this.value; calc_cost()"></label>
+						<label class="skill">スキル<select name="skill" onchange="calc_cost()"><option value="">なし</option></select></label>
 						<p class="cost"></p>
 					</div>
 				</div>

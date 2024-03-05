@@ -22,6 +22,7 @@
 		<form>
 			<textarea id="input" name="input"></textarea>
 			<button type="button" onclick="sql()">SQL実行</button>
+			<button type="button" onclick="make_fragments_skills(document.getElementById('input').value)">スキル・フラグメント作成</button>
 		</form>
 		<div id="output"></div>
 	</div>
@@ -104,8 +105,8 @@
 			回復<br>
 			自傷<br>
 			集中<br>
-			ATK強化<br>
-			TEC強化<br>
+			ATK変化<br>
+			TEC変化<br>
 			移動<br>
 			間合変更<br>
 			逃走ライン<br>

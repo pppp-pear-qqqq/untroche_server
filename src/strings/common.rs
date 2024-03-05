@@ -118,18 +118,19 @@ pub fn add_fragment(conn: &Connection, eno: i16, fragment: &Fragment) -> Result<
     })
 }
 
-pub fn html_special_chars(text: String) -> String {
+pub fn html_special_chars(text: &str) -> String {
     text
-    .replace('&',"&amp;")
-    .replace('"',"&quot;")
-    .replace('\'',"&#039;")
-    .replace('<',"&lt;")
-    .replace('>',"&gt;")
+        .replace('&',"&amp;")
+        .replace('"',"&quot;")
+        .replace('\'',"&#039;")
+        .replace('<',"&lt;")
+        .replace('>',"&gt;")
 }
 
-pub fn replace_tag(mut text: String, _eno: i16, replace_link: bool) -> Result<String, fancy_regex::Error> {
+pub fn replace_tag(text: &str, _eno: i16, replace_link: bool) -> Result<String, fancy_regex::Error> {
     // タグ置換
     let re = Regex::new(r"\[(.+)\|(.*)\|\1\]")?;
+    let mut text = text.to_string();
     while || -> Result<bool, fancy_regex::Error> {
         match re.captures(&text) {
             Ok(Some(caps)) => {
@@ -141,11 +142,10 @@ pub fn replace_tag(mut text: String, _eno: i16, replace_link: bool) -> Result<St
                     "large" => text = re.replace(&text, "<span class='large'>$2</span>").to_string(),
                     "small" => text = re.replace(&text, "<span class='small'>$2</span>").to_string(),
                     "rainbow" => text = re.replace(&text, "<span class='rainbow'>$2</span>").to_string(),
-                    "image" => {
-                        // 世界観スキルを持ち、許可された人だけ可能　そうでないなら未定義と同様の扱い
-                        // 一旦誰でも出来るようにしておく
-                        text = re.replace(&text, "<img src='$2' style='max-width:30em;max-height:30em'>").to_string();
-                    },
+                    // "image" => {
+                    //     // 世界観スキルを持ち、許可された人だけ可能　そうでないなら未定義と同様の扱い
+                    //     text = re.replace(&text, "<img src='$2' style='max-width:30em;max-height:30em'>").to_string();
+                    // },
                     // 未定義のタグ
                     _ => {
                         // これ二回検索しちゃってる　一旦こうしてはおくけれど
@@ -175,11 +175,10 @@ pub fn replace_tag(mut text: String, _eno: i16, replace_link: bool) -> Result<St
 }
 
 pub fn calc_fragment_kins(status: [u8; 8]) -> i32 {
-    let mut kins = 0;
-    kins += (status[0] as i32) << 8 | status[1] as i32;
-    kins += (status[2] as i32) << 8 | status[3] as i32;
-    kins += ((status[4] as i32) << 8 | status[5] as i32) * 3;
-    kins += ((status[6] as i32) << 8 | status[7] as i32) * 3;
-    kins /= 10;
+    let hp = ((status[0] as i16) << 8 | status[1] as i16) as i32;
+    let mp = ((status[2] as i16) << 8 | status[3] as i16) as i32;
+    let atk = ((status[4] as i16) << 8 | status[5] as i16) as i32;
+    let tec = ((status[6] as i16) << 8 | status[7] as i16) as i32;
+    let kins = hp + mp + atk * 3 + tec * 3;
     kins.max(0)
 }

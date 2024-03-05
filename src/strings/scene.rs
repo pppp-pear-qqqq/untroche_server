@@ -182,7 +182,7 @@ pub fn process_line(scene: &str, eno: i16, data: &mut HashMap<String, String>) -
                             // カテゴリの形式で指定
                             Err(_) => {
                                 let result = if *key == "all" {
-                                    let mut stmt = conn.prepare("SELECT id FROM base_fragment")
+                                    let mut stmt = conn.prepare("SELECT id FROM base_fragment WHERE category NOT IN ('記念','世界観','秘匿','名前')")
                                         .map_err(|err| ErrorInternalServerError(err))?;
                                     let x = stmt
                                         .query_map([], |row| Ok(row.get(0)?))
@@ -241,13 +241,13 @@ pub fn process_line(scene: &str, eno: i16, data: &mut HashMap<String, String>) -
                     // 現在額を取得
                     let kins: i32 = conn.query_row("SELECT kins FROM character WHERE eno=?1", params![eno], |row| Ok(row.get(0)?))
                         .map_err(|err| ErrorInternalServerError(err))?;
-                    // 変更額が正の数、または現在の所持キンスから変更額だけ減らしても0未満にならないなら変更
-                    let result = if value >= 0 || kins >= value {
-                        conn.execute("UPDATE character SET kins=kins+?1 WHERE eno=?2", params![value, eno])
+                    // または現在の所持キンスから値だけ変更して0未満にならないなら変更
+                    let result = kins + value >= 0;
+                    if result {
+                        conn.execute("UPDATE character SET kins=?1 WHERE eno=?2", params![kins + value, eno])
                             .map_err(|err| ErrorInternalServerError(err))?;
                         // データ更新用文字列
-                        "ok"
-                    } else { "err" };
+                    }
                     // もしデータキーが指定されていれば
                     if let Some(data_key) = option.get(1) {
                         // データを保存
@@ -260,7 +260,7 @@ pub fn process_line(scene: &str, eno: i16, data: &mut HashMap<String, String>) -
                     }
                     // まだシーンが終了していなければ継続
                     if let Some(pos) = option_end_pos {
-                        Ok(format!("\n──{}キンスを{}", value.abs(), if value < 0 {"支払いました"} else {"入手しました"}) + &process_line(&scene[pos..], eno, data)?)
+                        Ok(format!("\n──{}キンスを{}", value.abs(), if result { if value < 0 {"支払いました"} else {"入手しました"}} else { "支払えませんでした" }) + &process_line(&scene[pos..], eno, data)?)
                     } else {
                         // 終了
                         Ok(String::new())

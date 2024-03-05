@@ -1,0 +1,56 @@
+「あっ！　そこのアナタ～……<br>　『ガチャ』、回したくないですか～～？」
+「ここでしか手に入らない記念品が盛りだくさん！<br>　持っていれば親族友人に自慢して回れる素敵アイテムばかり！」
+「そんな特別なガチャがなんと～～～～…………」
+「いまだけ～～～～…………」
+「<span class="large"><span class="large"><span class="large rainbow">100,000キンス</span></span></span>で回せちゃう！<br>　こりゃあ回すしかありませんよォ～！！」<br><br>$(10回回す,ten)<br>$(1回回す,one)<br>$(回さない,leave)
+!yield select
+!match select{
+	ten{
+		!kins -1000000 cost
+		!match cost {
+			true{
+				<br><br>「毎度ありィ！」
+				<br><br>!fragment 記念
+				!fragment 記念
+				!fragment 記念
+				!fragment 記念
+				!fragment 記念
+				!fragment 記念
+				!fragment 記念
+				!fragment 記念
+				!fragment 記念
+				!fragment 記念
+				<br>「良いものは引けましたかぁ？<br>　またお越しくださいネ～～！！！！」
+				<br>……
+				…………
+			}
+			false{
+				<br><br>「ちッ！　貧乏人が！！！！」
+				<br>……
+				…………
+			}
+		}
+	}
+	one{
+		!kins -100000 cost
+		!match cost {
+			true{
+				<br><br>「毎度ありィ！」
+				<br>!fragment 記念
+				<br>「良いものは引けましたかぁ？<br>　またお越しくださいネ～～！！！！」
+				<br>……
+				…………
+			}
+			false{
+				<br><br>「ちッ！　貧乏人が！！！！」
+				<br>……
+				…………
+			}
+		}
+	}
+	leave{
+		「ちッ！　貧乏人が！！！！」
+		<br>……
+		…………
+	}
+}
