@@ -172,7 +172,7 @@ fn process_scene(text: &str, conn: &Connection, eno: i16, data: &mut HashMap<Str
                         data.remove(&var.to_string());
                     }
                     // 次
-                    process_scene(&text[1..], conn, eno, data)
+                    process_scene(if text.is_empty() {""} else {&text[1..]}, conn, eno, data)
                 }
                 "location" => {
                     // オプションと以降の文字列を取得
@@ -199,7 +199,7 @@ fn process_scene(text: &str, conn: &Connection, eno: i16, data: &mut HashMap<Str
                         // 次
                         Ok(format!("──{}に移動しました", location) + &process_scene(text, conn, eno, data)?)
                     } else {
-                        process_scene(&text[1..], conn, eno, data)
+                        process_scene(if text.is_empty() {""} else {&text[1..]}, conn, eno, data)
                     }
                 }
                 "kins" => {
@@ -346,15 +346,14 @@ fn process_scene(text: &str, conn: &Connection, eno: i16, data: &mut HashMap<Str
                         }
                     } else {
                         // 変数から判定対象の文字列を取得
-                        let content = data.get(&var.to_string())
-                            .ok_or(ScriptError::no_save_data(var))?;
+                        let content = data.get(&var.to_string()).map(|x| x.as_str());
                         // 条件に合致するキーのネストを取得
                         loop {
                             if nest == "" {
                                 break None;
                             }
                             let (key, value, next) = get_nest(nest)?;
-                            if key == content {
+                            if Some(key) == content || key == "_" {
                                 break Some(value);
                             }
                             nest = next.trim_start();
@@ -364,11 +363,7 @@ fn process_scene(text: &str, conn: &Connection, eno: i16, data: &mut HashMap<Str
                         process_scene(&(nest.to_string() + text), conn, eno, data)
                     } else {
                         // 該当するネストが無ければ行を潰す
-                        if text.is_empty() {
-                            process_scene("", conn, eno, data)
-                        } else {
-                            process_scene(&text[1..], conn, eno, data)
-                        }
+                        process_scene(if text.is_empty() {""} else {&text[1..]}, conn, eno, data)
                     }
                 }
                 "if" => {
@@ -404,8 +399,8 @@ fn process_scene(text: &str, conn: &Connection, eno: i16, data: &mut HashMap<Str
                         // 条件を満たす
                         process_scene(&(nest.to_string() + text), conn, eno, data)
                     } else {
-                        // 条件を満たさなかったので行削除
-                        process_scene(&text[1..], conn, eno, data)
+                        // 該当するネストが無ければ行を潰す
+                        process_scene(if text.is_empty() {""} else {&text[1..]}, conn, eno, data)
                     }
                 }
                 "return" => {
@@ -422,7 +417,7 @@ fn process_scene(text: &str, conn: &Connection, eno: i16, data: &mut HashMap<Str
                     };
                     // シーンを保存
                     conn.execute("UPDATE scene SET buffer=?1,data=?2,data_key=?3 WHERE eno=?4", params![
-                        &text[1..],
+                        if text.is_empty() {""} else {&text[1..]},
                         serde_json::to_string(&data).map_err(|_| ScriptError::parse_error("data", "String"))?,
                         var,
                         eno,
@@ -454,7 +449,7 @@ fn process_scene(text: &str, conn: &Connection, eno: i16, data: &mut HashMap<Str
             };
             // 表示用文字列を保存
             conn.execute("UPDATE scene SET display=?1 WHERE eno=?2", params![
-                display,
+                display.trim_end(),
                 eno,
             ]).map_err(|err| ScriptError::RusqliteError(err))?;
             // 終了

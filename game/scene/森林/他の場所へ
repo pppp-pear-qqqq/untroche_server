@@ -4,4 +4,7 @@ $(川を下る,海辺)\
 $(引き返す,森林)
 !yield select
 \
-!location %select
+!match select{
+	森林{}
+	_{!location %select}
+}

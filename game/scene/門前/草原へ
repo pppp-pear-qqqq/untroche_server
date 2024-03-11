@@ -5,4 +5,7 @@ $(先へ進む,草原)\
 $(引き返す,門前)
 !yield select
 \
-!location %select
+!match select{
+	門前{}
+	_{!location %select}
+}

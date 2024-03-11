@@ -6,4 +6,7 @@ $(海辺,海辺)　　$(森林,森林)\
 $(引き返す,岩場)
 !yield select
 \
-!location %select
+!match select{
+	岩場{}
+	_{!location %select}
+}

@@ -10,4 +10,7 @@ $(左の道,海辺)　　$(中央の道,岩場)　　$(右の道,森林)\
 $(引き返す,草原)
 !yield select
 \
-!location %select
+!match select{
+	草原{}
+	_{!location %select}
+}

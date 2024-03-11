@@ -1,5 +1,5 @@
 「あぁ、君」
-\
+
 !if lost_name{
 	「名前は？」
 	\
@@ -54,7 +54,7 @@
 
 					「今度は亡くさないようにね」
 					\
-					!fragment 名前 name
+					!name %name
 					!location - 門前
 				}
 			}
