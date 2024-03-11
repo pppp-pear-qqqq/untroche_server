@@ -1,40 +1,36 @@
-var down = false;
-var enemys = null;
-var shots = null;
-var temp_shot = null;
-var temp_enemys = null;
 
 window.addEventListener('load', () => {
+	const x = 50;
+	const y = 30;
 	const game = document.getElementById('game');
-	enemys = document.getElementById('enemy');
-	shots = document.getElementById('shot');
-	const template = document.getElementById('template');
-	temp_shot = template.content.querySelector('.shot');
-	temp_enemys = template.content.querySelectorAll('.enemy');
-	const player = document.getElementById('player');
-	game.onmousedown = () => down = true;
-	game.onmouseup = () => down = false;
-	game.ontouchstart = () => down = true;
-	game.ontouchend = () => down = false;
-	game.onmousemove = event => {
-		player.style.left = `${event.clientX}px`;
-		player.style.top = `${event.clientY}px`;
+	for (let i = 0; i < x; ++i) {
+		for (let j = 0; j < y; ++j) {
+			const cell = document.createElement('p');
+			if (Math.random() < 0.2) {
+				cell.classList.add('live');
+			}
+			game.appendChild(cell);
+		}
 	}
 	setInterval(() => {
-		Array.prototype.forEach.call(shots.children, e => {
-			e.style.top = e.style.top - 4;
-		})
-		Array.prototype.forEach.call(enemys.children, e => {
-			e.style.top = e.style.top - e.dataset.speed;
-		})
-		if (down) {
-			const shot = temp_shot.cloneNode(true);
-			shot.style.left = player.style.left;
-			shot.style.top = player.style.top;
-			shots.appendChild(shot);
+		const prev = game.cloneNode(true).childNodes;
+		for (let i = 0; i < x; ++i) {
+			for (let j = 0; j < y; ++j) {
+				let live = 0;
+				const xmax = Math.min(i + 1, x - 1);
+				for (let nx = Math.max(i - 1, 0); nx <= xmax; ++nx) {
+					const ymax = Math.min(j + 1, y - 1);
+					for (let ny = Math.max(j - 1, 0); ny <= ymax; ++ny) {
+						if (prev.item(nx + ny * x).classList.contains('live')) live += 1;
+					}
+				}
+				const now = i + j * x;
+				const cell = prev.item(now);
+				if (cell.classList.contains('live') && (live < 3 || live > 4))
+					game.children.item(now).classList.remove('live');
+				else if (live === 3)
+					game.children.item(now).classList.add('live');
+			}
 		}
-		if (Math.random() < 0.01) {
-			enemys.appendChild(temp_enemys[Math.floor(Math.random() * temp_enemys.length)].cloneNode(true));
-		}
-	}, 16);
+	}, 1000);
 });

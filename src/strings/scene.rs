@@ -1,3 +1,4 @@
+use core::fmt;
 use std::{collections::HashMap, fs};
 
 use actix_web::{
@@ -8,8 +9,9 @@ use actix_web::{
     web,
     HttpRequest
 };
-use rand::{distributions::{Distribution, WeightedIndex}, seq::SliceRandom, thread_rng};
-use rusqlite::params;
+use fancy_regex::Regex;
+use rand::{distributions::{Distribution, WeightedIndex}, seq::SliceRandom};
+use rusqlite::{params, Connection};
 use serde::Deserialize;
 
 use super::common;
@@ -17,7 +19,7 @@ use super::common;
 struct Scene {
     buffer: String,
     data: String,
-    data_key: String,
+    data_key: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -52,425 +54,445 @@ pub async fn next(req: HttpRequest, info: web::Json<NextData>) -> Result<String,
         },
     ).map_err(|err| ErrorInternalServerError(err))?;
     // データをHashMapに格納
-    let mut data: HashMap<String, String> = if scene.data != "" {
-        serde_json::from_str(&scene.data)
-            .map_err(|err| ErrorInternalServerError(err))?
-    } else { HashMap::new() };
+    let mut data: HashMap<String, String> = serde_json::from_str(&scene.data)
+        .unwrap_or(HashMap::new());
     // 渡されたデータを保存
-    if scene.data_key != "" {
-        data.insert(scene.data_key, info.value.clone().unwrap_or(String::new()));
+    if let Some(key) = scene.data_key {
+        data.insert(key, info.value.to_owned().unwrap_or(String::new()));
     }
     // 文字列を処理
-    process_line(scene.buffer.as_str(), eno, &mut data)
+    Ok(
+        process_scene(scene.buffer.as_str(), &conn, eno, &mut data)
+            .map_err(|err| ErrorInternalServerError(err))?
+            .trim_end().to_string()
+    )
 }
 
-fn script_error(caption: &str) -> actix_web::Error {
-    ErrorInternalServerError("スクリプトエラー : ".to_string() + caption)
+#[derive(Debug)]
+enum ScriptError {
+    CommandNoOption(String),
+    OptionError(String, String),
+    NoSaveData(String),
+    ParseError(String, String),
+    UndefinedCommand,
+    SyntaxError,
+    RusqliteError(rusqlite::Error),
+    CodeError(String),
 }
-
-fn get_option(text: &str) -> (Vec<&str>, Option<usize>) {
-    let option_end_pos = text.find('\n');
-    (if let Some(pos) = option_end_pos { &text[..pos] } else { text }.trim().split(' ').collect(), option_end_pos)
-}
-
-fn get_nest(text: &str) -> Result<(&str, usize), actix_web::Error> {
-    if text.chars().nth(0) != Some('{') {
-        return Err(script_error("ネストの範囲が正しく指定されていません"));
+impl ScriptError {
+    fn command_no_option(command: &str) -> Self {
+        Self::CommandNoOption(command.to_string())
     }
-    let mut index = 1 as usize;
-    let mut count = 1i8;
-    while count != 0 {
-        match text[index..].find(&['{', '}']) {
-            Some(pos) => {
-                match text[index..].bytes().nth(pos) {
-                    Some(b'{') => count += 1,
-                    Some(b'}') => count -= 1,
-                    _ => return Err(script_error("ネスト処理中の不明なエラーです")),
-                }
-                index += pos + 1;
-            }
-            // 中括弧がこれ以上見つからないのに数の整合が合っていない場合、構文エラー
-            None => if count > 0 {
-                return Err(script_error("ネストが閉じられていません"));
-            }
+    fn option_error(command: &str, value: &str) -> Self {
+        Self::OptionError(command.to_string(), value.to_string())
+    }
+    fn no_save_data(var: &str) -> Self {
+        Self::NoSaveData(var.to_string())
+    }
+    fn parse_error(value: &str, to: &str) -> Self {
+        Self::ParseError(value.to_string(), to.to_string())
+    }
+}
+impl fmt::Display for ScriptError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ScriptError::CommandNoOption(command) => match command.as_str() {
+                "var" => write!(f, "変更する変数名が指定されていない"),
+                "location" => write!(f, "移動先のロケーションが指定されていない"),
+                "kins" => write!(f, "変更するキンスの額が指定されていない"),
+                "fragment" => write!(f, "フラグメントのカテゴリまたはIDが指定されていない"),
+                "match" => write!(f, "分岐で参照する変数が指定されていない"),
+                _ => write!(f, "不明なコマンドでエラーが発生"),
+            },
+            ScriptError::OptionError(command, value) => match command.as_str() {
+                "fragment" => write!(f, "カテゴリ{}のフラグメントは存在しない", value),
+                "if" => write!(f, "指定された条件{}は定義されていない", value),
+                _ => write!(f, "不明なコマンドでエラーが発生"),
+            },
+            ScriptError::NoSaveData(var) => write!(f, "変数\"{}\"が保存されていない", var),
+            ScriptError::ParseError(value, to) => write!(f, "\"{}\" は {} に変換できない", value, to),
+            ScriptError::UndefinedCommand => write!(f, "定義されていないコマンド"),
+            ScriptError::SyntaxError => write!(f, "スクリプトの構文が異常"),
+            ScriptError::RusqliteError(err) => err.fmt(f),
+            ScriptError::CodeError(err) => err.fmt(f),
+        }
+    }
+}
+
+fn part_option(text: &str) -> (&str, &str) {
+    if let Some(pos) = text.find(&[' ', '\n', ';']) {
+        if text.bytes().nth(pos) == Some(b';') {
+            (&text[..pos], &text[pos + 1..])
+        } else {
+            (&text[..pos], &text[pos..])
+        }
+    } else {
+        (&text, "")
+    }
+}
+fn get_nest(text: &str) -> Result<(&str, &str, &str), ScriptError> {
+    let start = text.find('{').ok_or(ScriptError::SyntaxError)?;
+    let prev = text[..start].trim_end();
+    let text = text[start + 1..].trim_start();
+    let mut pos = 0;
+    let mut count = 1;
+    let end = loop {
+        pos += text[pos..].find(&['{', '}']).ok_or(ScriptError::SyntaxError)?;
+        match text.bytes().nth(pos) {
+            Some(b'{') => count += 1,
+            Some(b'}') => count -= 1,
+            _ => return Err(ScriptError::CodeError("ブラケットを正しく取得できない".to_string())),
         }
         if count < 0 {
-            // 構文エラー
-            return Err(script_error("対応しない位置でネストが閉じられようとしています"));
+            return Err(ScriptError::SyntaxError);
         }
-    }
-    Ok((&text[1..index - 1].trim(), index))
+        if count == 0 {
+            break pos;
+        }
+        pos += 1;
+    };
+    Ok((prev, text[..end].trim_end(), &text[end + 1..]))
 }
 
-pub fn process_line(scene: &str, eno: i16, data: &mut HashMap<String, String>) -> Result<String, actix_web::Error> {
-    match scene.chars().nth(0) {
+fn process_scene(text: &str, conn: &Connection, eno: i16, data: &mut HashMap<String, String>) -> Result<String, ScriptError> {
+    match text.chars().next() {
         // コマンド
         Some('!') => {
-            let command_end_pos = scene[1..].find(&[' ', '\n']);
-            let (command, scene) = if let Some(pos) = command_end_pos {
-                (scene[1..pos + 1].trim_end(), &scene[pos + 2..])
-            } else {
-                (&scene[1..], "")
-            };
+            // コマンドと以降の文字列を取得
+            let (command, text) = part_option(&text[1..]);
             match command {
-                // 中断
-                "yield" => {
-                    let (option, option_end_pos) = get_option(scene);
-                    // シーンを保存
-                    let conn = common::open_database()?;
-                    conn.execute("UPDATE scene SET buffer=?1,data=?2,data_key=?3 WHERE eno=?4", params![
-                        if let Some(pos) = option_end_pos { scene[pos..].trim_start() } else { scene },
-                        serde_json::to_string(&data).map_err(|err| ErrorInternalServerError(err))?,
-                        if let Some(key) = option.get(0) { key } else { "" },
-                        eno,
-                    ]).map_err(|err| ErrorInternalServerError(err))?;
-                    // 終了
-                    Ok(String::new())
+                "var" => {
+                    // オプションと以降の文字列を取得
+                    let (var, text) = part_option(text.trim_start());
+                    let (value, text) = part_option(text.trim_start());
+                    // 変数を更新
+                    if value != "-" {
+                        data.insert(var.to_string(), value.to_string());
+                    } else {
+                        data.remove(&var.to_string());
+                    }
+                    // 次
+                    process_scene(&text[1..], conn, eno, data)
                 }
-                // ロケーションを変更
                 "location" => {
-                    let (option, option_end_pos) = get_option(scene);
-                    // ロケーションを保存
-                    let conn = common::open_database()?;
-                    let key = option.get(0).ok_or(script_error("変数が指定されていません"))?;
-                    let location = if key.chars().nth(0) == Some('!') {
-                        &key[1..]
+                    // オプションと以降の文字列を取得
+                    let (mut op, mut text) = part_option(text.trim_start());
+                    let view = if op == "-" {
+                        (op, text) = part_option(text.trim_start());
+                        false
                     } else {
-                        &data.get(&key.to_string()).ok_or(script_error("変数が保存されていません"))?
+                        true
                     };
+                    // 移動先を取得
+                    let location = match op.chars().next() {
+                        // 変数に保存されたもの
+                        Some('%') => data.get(&op[1..].to_string()).ok_or(ScriptError::no_save_data(op))?,
+                        // 直接指定
+                        Some(_) => op,
+                        // 指定されていない
+                        None => return Err(ScriptError::command_no_option(command))
+                    };
+                    // ロケーションを変更
                     conn.execute("UPDATE character SET location=?1 WHERE eno=?2", params![location, eno])
-                        .map_err(|err| ErrorInternalServerError(err))?;
-                    // まだシーンが終了していなければ継続
-                    if let Some(pos) = option_end_pos {
-                        process_line(&scene[pos..], eno, data)
+                        .map_err(|err| ScriptError::RusqliteError(err))?;
+                    if view {
+                        // 次
+                        Ok(format!("──{}に移動しました", location) + &process_scene(text, conn, eno, data)?)
                     } else {
-                        // 終了
-                        Ok(String::new())
+                        process_scene(&text[1..], conn, eno, data)
                     }
                 }
-                // フラグメントを獲得
-                "fragment" => {
-                    let (option, option_end_pos) = get_option(scene);
-                    let key = option.get(0)
-                        .ok_or(script_error("フラグメントが指定されていません"))?;
-                    // データベース接続
-                    let conn = common::open_database()?;
-                    let fragment = if *key == "名前" {
-                        let name = data.get(option.get(1).ok_or(script_error("変数が指定されていません"))?.to_owned()).ok_or(script_error("変数が保存されていません"))?.to_string();
-                        if name == "" {
-                            common::Fragment::new(
-                                "名前".to_string(),
-                                "名無し".to_string(),
-                                "あなたは名乗らない。<br>それは自らの選択か、あるいは名乗る名が無いのか。".to_string(),
-                                [0, 15, 0, 6, 0, 1, 0, 1],
-                                None
-                            )
-                        } else {
-                            common::Fragment::new(
-                                "名前".to_string(),
-                                name,
-                                "あなたの名前。<br>決して無くさないよう、零さないよう。".to_string(),
-                                [0, 15, 0, 10, 0, 0, 0, 0],
-                                None
-                            )
-                        }
-                    } else {
-                        // idを取得
-                        let id = match key.parse::<i32>() {
-                            // idの形式で指定
-                            Ok(id) => id,
-                            // カテゴリの形式で指定
-                            Err(_) => {
-                                let result = if *key == "all" {
-                                    let mut stmt = conn.prepare("SELECT id FROM base_fragment WHERE category NOT IN ('記念','世界観','秘匿','名前')")
-                                        .map_err(|err| ErrorInternalServerError(err))?;
-                                    let x = stmt
-                                        .query_map([], |row| Ok(row.get(0)?))
-                                        .map_err(|err| ErrorInternalServerError(err))?
-                                        .collect::<Result<Vec<i32>, rusqlite::Error>>()
-                                        .map_err(|err| ErrorInternalServerError(err))?;
-                                    x
-                                } else {
-                                    let mut stmt = conn.prepare("SELECT id FROM base_fragment WHERE category=?1")
-                                        .map_err(|err| ErrorInternalServerError(err))?;
-                                    let x = stmt
-                                        .query_map(params![key], |row| Ok(row.get(0)?))
-                                        .map_err(|err| ErrorInternalServerError(err))?
-                                        .collect::<Result<Vec<i32>, rusqlite::Error>>()
-                                        .map_err(|err| ErrorInternalServerError(err))?;
-                                    x
-                                };
-                                let mut rng = thread_rng();
-                                *result.choose(&mut rng)
-                                    .ok_or(script_error("指定されたカテゴリのフラグメントは存在しません"))?
-                            }
-                        };
-                        // idからフラグメントを取得
-                        conn.query_row(
-                            "SELECT category,name,lore,status,skill FROM base_fragment WHERE id=?1",
-                            params![id],
-                            |row| Ok(common::Fragment::new(
-                                row.get(0)?,
-                                row.get(1)?,
-                                row.get(2)?,
-                                row.get(3)?,
-                                row.get(4)?
-                            )),
-                        ).map_err(|err| ErrorInternalServerError(err))?
-                    };
-                    let get = common::add_fragment(&conn, eno, &fragment)
-                        .map_err(|err| ErrorInternalServerError(err))?;
-                    // まだシーンが終了していなければ継続
-                    if let Some(pos) = option_end_pos {
-                        Ok(format!("\n──フラグメント『{}』を入手しました{}", fragment.name, if get {""} else {"<br>──所持数制限により破棄されました"}) + &process_line(&scene[pos..], eno, data)?)
-                    } else {
-                        // 終了
-                        Ok(String::new())
-                    }
-                }
-                //  キンス変化
                 "kins" => {
-                    let (option, option_end_pos) = get_option(scene);
-                    // 値を取得
-                    let value: i32 = option.get(0)
-                        .ok_or(script_error("額が指定されていません"))?
-                        .parse()
-                        .map_err(|_| script_error("額を正しく認識できません"))?;
-                    // データベース接続
-                    let conn = common::open_database()?;
-                    // 現在額を取得
-                    let kins: i32 = conn.query_row("SELECT kins FROM character WHERE eno=?1", params![eno], |row| Ok(row.get(0)?))
-                        .map_err(|err| ErrorInternalServerError(err))?;
-                    // または現在の所持キンスから値だけ変更して0未満にならないなら変更
-                    let result = kins + value >= 0;
+                    // オプションと以降の文字列を取得
+                    let (value, text) = part_option(text.trim_start());
+                    // 変更量を取得
+                    let value = value.parse::<i32>().map_err(|_| ScriptError::parse_error(value, "i32"))?;
+                    // 現在の所持キンスを取得
+                    let kins: i32 = conn.query_row("SELECT kins FROM character WHERE eno=?1", params![eno], |row| row.get(0))
+                        .map_err(|err| ScriptError::RusqliteError(err))?;
+                    // 変更した際にマイナスになっていないか確認
+                    let result = kins + value > 0;
+                    // なっていなければ変更
                     if result {
                         conn.execute("UPDATE character SET kins=?1 WHERE eno=?2", params![kins + value, eno])
-                            .map_err(|err| ErrorInternalServerError(err))?;
-                        // データ更新用文字列
+                            .map_err(|err| ScriptError::RusqliteError(err))?;
                     }
-                    // もしデータキーが指定されていれば
-                    if let Some(data_key) = option.get(1) {
-                        // データを保存
-                        data.insert(data_key.to_string(), result.to_string());
-                        // データベース側にも保存（これ本当にこのタイミングじゃないといけないかちょっと分からない）
-                        conn.execute("UPDATE scene SET data=?1 WHERE eno=?2", params![
-                            serde_json::to_string(&data).map_err(|err| ErrorInternalServerError(err))?,
-                            eno,
-                        ]).map_err(|err| ErrorInternalServerError(err))?;
+                    // オプションと以降の文字列を取得
+                    let (var, text) = part_option(text.trim_start());
+                    // 指定が"_"でなかった場合dataに結果を保存
+                    if var != "_" {
+                        data.insert(var.to_string(), result.to_string());
                     }
-                    // まだシーンが終了していなければ継続
-                    if let Some(pos) = option_end_pos {
-                        Ok(format!("\n──{}キンスを{}", value.abs(), if result { if value < 0 {"支払いました"} else {"入手しました"}} else { "支払えませんでした" }) + &process_line(&scene[pos..], eno, data)?)
-                    } else {
-                        // 終了
-                        Ok(String::new())
-                    }
+                    // 次
+                    Ok(format!("──{}キンスを{}", value.abs(), if result {if value > 0 {"入手しました"} else {"支払いました"}} else {"支払えませんでした"}) + &process_scene(text, conn, eno, data)?)
                 }
-                // 変数設定
-                "var" => {
-                    let (option, option_end_pos) = get_option(scene);
-                    // 値を取得
-                    let data_key = option.get(0)
-                        .ok_or(script_error("変数が指定されていません"))?;
-                    if let Some(value) = option.get(1) {
-                        // データを保存
-                        data.insert(data_key.to_string(), value.to_string());
-                    } else {
-                        // データを削除
-                        data.remove(&data_key.to_string());
-                    }
-                    // データベース接続
-                    let conn = common::open_database()?;
-                    // データベース側にも保存
-                    conn.execute("UPDATE scene SET data=?1 WHERE eno=?2", params![
-                        serde_json::to_string(&data).map_err(|err| ErrorInternalServerError(err))?,
-                        eno,
-                    ]).map_err(|err| ErrorInternalServerError(err))?;
-                    // まだシーンが終了していなければ継続
-                    if let Some(pos) = option_end_pos {
-                        process_line(&scene[pos..], eno, data)
-                    } else {
-                        // 終了
-                        Ok(String::new())
-                    }
+                "fragment" => {
+                    // オプションと以降の文字列を取得
+                    let (op, text) = part_option(text.trim_start());
+                    // 数値に変換できるならID、そうでないならカテゴリ
+                    let id = match op.parse::<i32>() {
+                        Ok(id) => id,
+                        Err(_) => {
+                            let fragments = match op {
+                                "all" => {
+                                    let mut stmt = conn.prepare("SELECT id FROM base_fragment WHERE category NOT IN ('記念','世界観','秘匿','名前')")
+                                        .map_err(|err| ScriptError::RusqliteError(err))?;
+                                    let x = stmt
+                                        .query_map([], |row| row.get(0))
+                                        .map_err(|err| ScriptError::RusqliteError(err))?
+                                        .collect::<Result<Vec<i32>, rusqlite::Error>>()
+                                        .map_err(|err| ScriptError::RusqliteError(err))?;
+                                    x
+                                }
+                                _ => {
+                                    let mut stmt = conn.prepare("SELECT id FROM base_fragment WHERE category=?1")
+                                        .map_err(|err| ScriptError::RusqliteError(err))?;
+                                    let x = stmt
+                                        .query_map(params![op], |row| row.get(0))
+                                        .map_err(|err| ScriptError::RusqliteError(err))?
+                                        .collect::<Result<Vec<i32>, rusqlite::Error>>()
+                                        .map_err(|err| ScriptError::RusqliteError(err))?;
+                                    x
+                                }
+                            };
+                            *fragments.choose(&mut rand::thread_rng())
+                                .ok_or(ScriptError::option_error("fragment", op))?
+                        }
+                    };
+                    // idからフラグメントを取得
+                    let fragment = conn.query_row(
+                        "SELECT category,name,lore,status,skill FROM base_fragment WHERE id=?1",
+                        params![id],
+                        |row| Ok(common::Fragment::new(
+                            row.get(0)?,
+                            row.get(1)?,
+                            row.get(2)?,
+                            row.get(3)?,
+                            row.get(4)?
+                        )),
+                    ).map_err(|err| ScriptError::RusqliteError(err))?;
+                    // 獲得処理
+                    let get = common::add_fragment(&conn, eno, &fragment)
+                        .map_err(|err| ScriptError::RusqliteError(err))?;
+                    // 次
+                    Ok(format!("──フラグメント『{}』を入手しました{}", fragment.name, if !get {"<br>──所持数制限により破棄されました"} else {""}) + &process_scene(text, conn, eno, data)?)
                 }
-                // 終了
-                "return" => {
-                    let conn = common::open_database()?;
-                    conn.execute("UPDATE scene SET buffer='',display=?1,data=?2,data_key='' WHERE eno=?3", params![
-                        scene,
-                        serde_json::to_string(&data).map_err(|err| ErrorInternalServerError(err))?,
-                        eno,
-                    ]).map_err(|err| ErrorInternalServerError(err))?;
-                    Ok(String::new())
+                "name" => {
+                    // オプションと以降の文字列を取得
+                    let (op, text) = part_option(text.trim_start());
+                    // 名前を取得
+                    let name = match op.chars().next() {
+                        // 変数に保存されたもの
+                        Some('%') => data.get(&op[1..].to_string()).ok_or(ScriptError::no_save_data(op))?,
+                        // 直接指定
+                        Some(_) => op,
+                        // 指定されていない
+                        None => ""
+                    };
+                    // フラグメントデータを作成
+                    let fragment = match name {
+                        "" => common::Fragment::new(
+                            "名前".to_string(),
+                            "名無し".to_string(),
+                            "あなたは名乗らない。<br>それは自らの選択か、あるいは名乗る名が無いのか。".to_string(),
+                            [0, 15, 0, 6, 0, 1, 0, 1],
+                            None
+                        ),
+                        _ => common::Fragment::new(
+                            "名前".to_string(),
+                            name.to_string(),
+                            "あなたの名前。<br>決して無くさないよう、零さないよう。".to_string(),
+                            [0, 15, 0, 10, 0, 0, 0, 0],
+                            None
+                        ),
+                    };
+                    // 獲得処理
+                    let get = common::add_fragment(&conn, eno, &fragment)
+                        .map_err(|err| ScriptError::RusqliteError(err))?;
+                    // 次
+                    Ok(format!("──フラグメント『{}』を入手しました{}", fragment.name, if get {"<br>──所持数制限により破棄されました"} else {""}) + &process_scene(text, conn, eno, data)?)
                 }
-                // 分岐
+                // "battle" => {
+                //     // !battle (id)
+                //     // id以外に指定しなきゃいけないことある？　多分ない……
+                //     // 指定されたIDのnpcと戦闘を行う
+                //     // オプションと以降の文字列を取得
+                //     let (id, text) = part_option(text.trim_start());
+                //     // idを取得
+                //     let id = id.parse::<u8>().map_err(|_| ScriptError::parse_error(id, "u8"))?;
+                //     // 戦闘処理
+                //     let log = battle::battle([eno, id as i16 * -1]).map_err(|err| ScriptError::CodeError(err))?;
+                    
+                //     let log_text = serde_json::to_string(&log).map_err(|err| ScriptError::CodeError(err.to_string()))?;
+                //     todo!()
+                // }
                 "match" => {
-                    let nest_start_pos = scene.find('{')
-                        .ok_or(script_error("分岐の構文が異常です"))?;
-                    let key = scene[..nest_start_pos].trim();
-                    let (mut nest, nest_end_pos) = get_nest(&scene[nest_start_pos..])?;
-                    let mut content = if key == "%" {
-                        let check = rand::random::<u8>();
+                    let (var, mut nest, text) = get_nest(text.trim_start())?;
+                    if let Some(nest) = if var == "%" {
+                        // 確率
+                        let content = rand::random::<u8>();
+                        // 条件に合致するキーのネストを取得
                         loop {
-                            match nest.find('{') {
-                                Some(tag_end_pos) => {
-                                    let (content, content_end_pos) = get_nest(&nest[tag_end_pos..])?;
-                                    let part = nest[..tag_end_pos].trim().parse::<u8>().map_err(|_| script_error("確率分岐のキーが数値ではありません"))?;
-                                    if part >= check {
-                                        break content;
-                                    }
-                                    nest = &nest[tag_end_pos + content_end_pos..];
-                                }
-                                None => break "",
+                            if nest == "" {
+                                break None;
                             }
+                            let (key, value, next) = get_nest(nest)?;
+                            let key = key.parse::<u8>().map_err(|_| ScriptError::parse_error(key, "u8"))?;
+                            // 255を指定した際に確実に通るように　この場合0を指定しても1/255の確率で通るが、実用上通らないネストに意味は無いので別にいい
+                            if key >= content {
+                                break Some(value);
+                            }
+                            nest = next.trim_start();
                         }
                     } else {
-                        let check = match data.get(key) {
-                            Some(value) => value.as_str(),
-                            None => "",
-                        };
+                        // 変数から判定対象の文字列を取得
+                        let content = data.get(&var.to_string())
+                            .ok_or(ScriptError::no_save_data(var))?;
+                        // 条件に合致するキーのネストを取得
                         loop {
-                            match nest.find('{') {
-                                Some(tag_end_pos) => {
-                                    let (content, content_end_pos) = get_nest(&nest[tag_end_pos..])?;
-                                    let part = nest[..tag_end_pos].trim();
-                                    if part == "_" || part == check {
-                                        break content;
-                                    }
-                                    nest = &nest[tag_end_pos + content_end_pos..];
-                                }
-                                None => break "",
+                            if nest == "" {
+                                break None;
                             }
+                            let (key, value, next) = get_nest(nest)?;
+                            if key == content {
+                                break Some(value);
+                            }
+                            nest = next.trim_start();
                         }
-                    }.to_string();
-                    content += &scene[nest_start_pos + nest_end_pos..];
-                    Ok(process_line(&content, eno, data)?.to_string())
+                    } {
+                        // 中身と次のテキストを結合して処理
+                        process_scene(&(nest.to_string() + text), conn, eno, data)
+                    } else {
+                        // 該当するネストが無ければ行を潰す
+                        if text.is_empty() {
+                            process_scene("", conn, eno, data)
+                        } else {
+                            process_scene(&text[1..], conn, eno, data)
+                        }
+                    }
                 }
                 "if" => {
-                    let nest_start_pos = scene.find('{')
-                        .ok_or(script_error("分岐の構文が異常です"))?;
-                    let key = scene[..nest_start_pos].trim();
-                    let (nest, nest_end_pos) = get_nest(&scene[nest_start_pos..])?;
-                    match key {
+                    let (predicate, nest, text) = get_nest(text.trim_start())?;
+                    if let Some(nest) = match predicate {
+                        // 名前が無ければ
                         "lost_name" => {
-                            // データベース接続
-                            let conn = common::open_database()?;
                             // 名前を取得
-                            let name: Option<String> = match conn.query_row(
+                            let name = match conn.query_row(
                                 "SELECT name FROM fragment WHERE eno=?1 AND category='名前' LIMIT 1",
                                 params![eno],
-                                |row| Ok(row.get(0)?)
+                                |row| row.get(0)
                             ) {
                                 Ok(name) => Some(name),
                                 Err(err) => match err {
                                     rusqlite::Error::QueryReturnedNoRows => None,
-                                    _ => return Err(ErrorInternalServerError(err)),
+                                    _ => return Err(ScriptError::RusqliteError(err)),
                                 }
                             };
                             // 名前を取得できたか確認
                             if let Some(name) = name {
                                 // 名前がある（保存する）
                                 data.insert("name".to_string(), name);
-                                conn.execute("UPDATE scene SET data=?1 WHERE eno=?2", params![
-                                    serde_json::to_string(&data).map_err(|err| ErrorInternalServerError(err))?,
-                                    eno,
-                                ]).map_err(|err| ErrorInternalServerError(err))?;
-                                // ネストの終了地点から
-                                Ok(process_line(&scene[nest_start_pos + nest_end_pos..].trim_start(), eno, data)?.to_string())
+                                // 条件を満たさない
+                                None
                             } else {
-                                // 名前がない（ネストの中身を処理）
-                                Ok(process_line(&format!("{}{}", nest, &scene[nest_start_pos + nest_end_pos..]), eno, data)?.to_string())
+                                // 条件を満たす
+                                Some(nest)
                             }
                         }
-                        _ => Err(script_error("定義されていないコマンドです"))
+                        _ => return Err(ScriptError::option_error("if", predicate)),
+                    } {
+                        // 条件を満たす
+                        process_scene(&(nest.to_string() + text), conn, eno, data)
+                    } else {
+                        // 条件を満たさなかったので行削除
+                        process_scene(&text[1..], conn, eno, data)
                     }
                 }
-                _ => Err(script_error("定義されていないコマンドです"))
-            }
-        }
-        // 変数出力
-        Some('%') => {
-            let end = scene[1..].find('%').ok_or(script_error("変数名が異常です"))?;
-            let text = data.get(&scene[1..end + 1].to_string()).ok_or(script_error("変数が保存されていません"))?;
-            Ok(text.clone() + &process_line(&scene[end + 2..], eno, data)?)
-        }
-        // コメント
-        Some('#') => {
-            // 行末までを取得
-            match scene.find('\n') {
-                // 次がある
-                Some(end) => {
-                    process_line(&scene[end..], eno, data)
+                "return" => {
+                    // 以降を捨てて次
+                    process_scene("", conn, eno, data)
                 }
-                // これで終了
-                None => {
-                    let conn = common::open_database()?;
-                    conn.execute("UPDATE scene SET buffer='',display=?1,data=?2,data_key='' WHERE eno=?3", params![
-                        scene,
-                        serde_json::to_string(&data).map_err(|err| ErrorInternalServerError(err))?,
+                "yield" => {
+                    // オプションと以降の文字列を取得
+                    let (var, text) = part_option(text.trim_start());
+                    let var = if var != "_" && var != "" {
+                        Some(var)
+                    } else {
+                        None
+                    };
+                    // シーンを保存
+                    conn.execute("UPDATE scene SET buffer=?1,data=?2,data_key=?3 WHERE eno=?4", params![
+                        &text[1..],
+                        serde_json::to_string(&data).map_err(|_| ScriptError::parse_error("data", "String"))?,
+                        var,
                         eno,
-                    ]).map_err(|err| ErrorInternalServerError(err))?;
+                    ]).map_err(|err| ScriptError::RusqliteError(err))?;
+                    // 終了
                     Ok(String::new())
                 }
+                _ => Err(ScriptError::UndefinedCommand)
             }
+        }
+        // 変数
+        Some('%') => {
+            let end = text[1..].find('%')
+                .ok_or(ScriptError::SyntaxError)?;
+            let var = &text[1..end + 1];
+            let content = data.get(&var.to_string())
+                .ok_or(ScriptError::no_save_data(var))?;
+            Ok(content.to_owned() + &process_scene(&text[end + 2..], conn, eno, data)?)
         }
         // 通常文字列
         Some(_) => {
-            // シーンを保存
-            let conn = common::open_database()?;
-            match scene.find(&['!', '%', '#']) {
-                // 次のコマンドがある
-                Some(pos) => {
-                    conn.execute("UPDATE scene SET buffer='',display=?1,data=?2,data_key='' WHERE eno=?3", params![
-                        &scene[..pos].trim_end(),
-                        serde_json::to_string(&data).map_err(|err| ErrorInternalServerError(err))?,
-                        eno,
-                    ]).map_err(|err| ErrorInternalServerError(err))?;
-                    Ok(String::from(scene[..pos].trim_end()) + &process_line(&scene[pos..], eno, data)?)
-                }
-                // これで終了"
-                None => {
-                    conn.execute("UPDATE scene SET buffer='',display=?1,data=?2,data_key='' WHERE eno=?3", params![
-                        scene,
-                        serde_json::to_string(&data).map_err(|err| ErrorInternalServerError(err))?,
-                        eno,
-                    ]).map_err(|err| ErrorInternalServerError(err))?;
-                    Ok(String::from(scene))
-                }
-            }
+            // テキストを取得
+            let display = if let Some(next) = text.find(&['!', '%']) {
+                // 次にコマンドがあれば、ここまでの情報と次
+                text[..next].to_string() + &process_scene(&text[next..], conn, eno, data)?
+            } else {
+                // 無ければ、ファイル最後の改行を削除して次
+                text.trim_end().to_string() + &process_scene("", conn, eno, data)?
+            };
+            // 表示用文字列を保存
+            conn.execute("UPDATE scene SET display=?1 WHERE eno=?2", params![
+                display,
+                eno,
+            ]).map_err(|err| ScriptError::RusqliteError(err))?;
+            // 終了
+            Ok(display)
         }
         // 文字列が空
         None => {
-            // 現在のロケーションを取得
-            let conn = common::open_database()?;
-            let location = conn.query_row(
-                "SELECT location FROM character WHERE eno=?1",
-                params![eno],
-                |row| row.get::<usize, String>(0),
-            ).map_err(|err| ErrorInternalServerError(err))?;
+            // ロケーションを取得
+            let location: String = conn.query_row("SELECT location FROM character WHERE eno=?1", params![eno], |row| row.get(0))
+                .map_err(|err| ScriptError::RusqliteError(err))?;
             // 現在のロケーションに対応したシーンのリストを取得
             let mut stmt = conn.prepare("SELECT name,weight FROM scene_list WHERE location=?1")
-                .map_err(|err| ErrorInternalServerError(err))?;
-            // シーンリストの取得（ファイルパス, 重み）
-            let scenes = stmt
-                .query_map(params![location], |row| Ok((row.get::<usize, String>(0)?, row.get::<usize, i32>(1)?)))
-                .map_err(|err| ErrorInternalServerError(err))?
-                .collect::<Result<Vec<(String, i32)>, rusqlite::Error>>()
-                .map_err(|err| ErrorInternalServerError(err))?;
-            if scenes.iter().count() == 0 {
-                return Ok(process_line(fs::read_to_string("game/scene/何もない").unwrap().as_str(), eno, data)?.to_string())
-            }
-            // ランダム抽選の用意
-            let dist = WeightedIndex::new(scenes.iter().map(|x| x.1).collect::<Vec<i32>>())
-                .map_err(|err| actix_web::error::ErrorInternalServerError(err))?;
-            let mut rng = rand::thread_rng();
-            // ランダムに決定されたファイルからテキストを取得
-            let scene =
-                fs::read_to_string("game/scene/".to_string() + &scenes[dist.sample(&mut rng)].0)
-                .map_err(|err| ErrorInternalServerError(err))?;
-            // インデントを消去して処理開始
-            Ok(process_line(scene.replace('\t', "").as_str(), eno, data)?.to_string())
+                .map_err(|err| ScriptError::RusqliteError(err))?;
+            let scenes: Vec<(String, i32)> = stmt
+                .query_map(params![location], |row| Ok((row.get(0)?, row.get(1)?)))
+                .map_err(|err| ScriptError::RusqliteError(err))?
+                .collect::<Result<_, _>>()
+                .map_err(|err| ScriptError::RusqliteError(err))?;
+            // 次のテキストを取得、整形
+            let text = if scenes.iter().count() != 0 {
+                // ランダム抽選の用意
+                let weight = WeightedIndex::new(scenes.iter().map(|x| x.1).collect::<Vec<_>>())
+                    .map_err(|err| ScriptError::CodeError(err.to_string()))?;
+                // ランダムに決定されたファイルからテキストを取得
+                fs::read_to_string(format!("game/scene/{}", &scenes[weight.sample(&mut rand::thread_rng())].0))
+            } else {
+                // そのロケーションにイベントが一件も登録されていなければ、デフォルト
+                fs::read_to_string("game/scene/何もない")
+            }.map_err(|err| ScriptError::CodeError(err.to_string()))?
+                .replace("\t", "")
+                .replace("\r\n", "\n")
+                .replace("\r", "\n")
+                .replace("\\\n", "<br>");
+            // スクリプトコメントの正規表現
+            let re = Regex::new("##.*\n")
+                .map_err(|err| ScriptError::CodeError(err.to_string()))?;
+            // スクリプトコメントを削除し次を開始
+            process_scene(&("\n<br>……\n…………\n<br>".to_string() + &re.replace_all(&text, "")), conn, eno, data)
         }
     }
 }

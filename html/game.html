@@ -16,50 +16,50 @@
 		<script src="strings/js/battle.js"></script>
 		<script src="strings/js/common.js"></script>
 		<script src="strings/js/game.js"></script>
+		<template id="template_character">
+			<div class="character">
+				<p class="eno"></p><p class="acronym"></p><p class="name"></p>
+				<p class="word"></p>
+				<div class="footer"><span class="location"></span><a class="to right">話しかける</a><a class="battle win">勝つつもりで挑む</a><a class="battle lose">負けるつもりで挑む</a></div>
+			</div>
+		</template>
+		<template id="template_talk">
+			<div class="talk">
+				<p class="to hide"></p>
+				<p class="acronym"></p><p class="name"></p><p class="eno"></p>
+				<p class="word"></p>
+				<div class="footer"><span class="location"></span><a class="delete">[削除]</a><span class="id right"></span><span class="timestamp"></span><a class="reply">Reply</a></div>
+			</div>
+		</template>
+		<template id="template_fragment">
+			<div class="fragment">
+				<p class="name"></p>
+				<p class="status"></p>
+				<p class="skill"></p>
+				<img>
+			</div>
+		</template>
+		<template id="template_profile_fragment">
+			<div class="fragment">
+				<p class="name"></p><p class="category"></p>
+				<p class="lore"></p>
+			</div>
+		</template>
+		<template id="template_battle_reserve">
+			<div class="item">
+				<p class="message"></p>
+				<div class="option"></div>
+			</div>
+		</template>
+		<template id="template_battle_log">
+			<div>
+				<a class="left"><span class="eno"></span><span class="name"></span></a>
+				<a class="right"><span class="eno"></span><span class="name"></span></a>
+			</div>
+		</template>
+		<script>var eno = {{eno}};</script>
+		<script>{% for p in display %}explore_text.push('{{p}}');{% endfor %}</script>
 	</head>
-	<template id="template_character">
-		<div class="character">
-			<p class="eno"></p><p class="acronym"></p><p class="name"></p>
-			<p class="word"></p>
-			<div class="footer"><span class="location"></span><a class="to right">話しかける</a><a class="battle win">勝つつもりで挑む</a><a class="battle lose">負けるつもりで挑む</a></div>
-		</div>
-	</template>
-	<template id="template_talk">
-		<div class="talk">
-			<p class="to hide"></p>
-			<p class="name"></p><p class="eno"></p>
-			<p class="word"></p>
-			<div class="footer"><span class="location"></span><span class="id right"></span><span class="timestamp"></span><a class="reply">Reply</a></div>
-		</div>
-	</template>
-	<template id="template_fragment">
-		<div class="fragment">
-			<p class="name"></p>
-			<p class="status"></p>
-			<p class="skill"></p>
-			<img>
-		</div>
-	</template>
-	<template id="template_profile_fragment">
-		<div class="fragment">
-			<p class="name"></p><p class="category"></p>
-			<p class="lore"></p>
-		</div>
-	</template>
-	<template id="template_battle_reserve">
-		<div class="item">
-			<p class="message"></p>
-			<div class="option"></div>
-		</div>
-	</template>
-	<template id="template_battle_log">
-		<div>
-			<a class="left"><span class="eno"></span><span class="name"></span></a>
-			<a class="right"><span class="eno"></span><span class="name"></span></a>
-		</div>
-	</template>
-	<script>var eno = {{eno}};</script>
-	<script>{% for p in display %}explore_text.push('{{p}}');{% endfor %}</script>
 	<body class="back">
 		<div id="header">
 			<p class="system">"Strings"</p><p><span class="eno">Eno.{{eno}}</span><span class="name">{{name}}</span></p>
@@ -97,14 +97,14 @@
 				<div class="preview hide">
 					<div class="talk">
 						<p class="to hide"></p>
-						<p class="name"></p><p class="eno"></p>
+						<p class="acronym">　</p><p class="name"></p><p class="eno"></p>
 						<p class="word"></p>
 						<div class="footer"><span class="location"></span><a class="right" onclick="preview_close()">Close</a></div>
 					</div>
 				</div>
 				<div class="talk" style="border-color: {{color}}">
 					<p class="to">>>Eno<input type="number" name="to" placeholder="指定なし"></p><label class="lock"><input type="checkbox" name="location"><img></label>
-					<input type="text" name="name" class="name" placeholder="名前" value="{{name}}"><p class="eno">Eno.{{eno}}</p>
+					<p class="acronym">　</p><input type="text" name="name" class="name" placeholder="名前" value="{{name}}"><p class="eno">Eno.{{eno}}</p>
 					<textarea name="word" class="word" placeholder="発言内容"></textarea>
 					<div class="footer"><span class="bold" onclick="add_decoration_tag('[b|', '|b]')">太字</span><span class="italic" onclick="add_decoration_tag('[i|', '|i]')">斜体</span><span class="underline" onclick="add_decoration_tag('[u|', '|u]')">下線</span><span class="linethrough" onclick="add_decoration_tag('[s|', '|s]')">取消</span><span class="rainbow" onclick="add_decoration_tag('[rainbow|', '|rainbow]')">虹色</span><span onclick="add_decoration_tag('[large|', '|large]')">大字</span><span onclick="add_decoration_tag('[small|', '|small]')">小字</span><a class="right" onclick="preview_open()">プレビュー</a><a onclick="talk()">発言</a></div>
 				</div>

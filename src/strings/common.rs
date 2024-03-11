@@ -129,7 +129,7 @@ pub fn html_special_chars(text: &str) -> String {
 
 pub fn replace_tag(text: &str, _eno: i16, replace_link: bool) -> Result<String, fancy_regex::Error> {
     // タグ置換
-    let re = Regex::new(r"\[(.+)\|(.*)\|\1\]")?;
+    let re = Regex::new(r"\[(.+)\|([\s\S]*?)\|\1\]")?;
     let mut text = text.to_string();
     while || -> Result<bool, fancy_regex::Error> {
         match re.captures(&text) {

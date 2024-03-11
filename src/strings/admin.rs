@@ -11,7 +11,7 @@ use super::{
 };
 
 // データベースに保存されているパスワードを取得
-fn check_server_password(conn: &Connection, password: &str) -> Result<(), actix_web::Error> {
+pub(super) fn check_server_password(conn: &Connection, password: &str) -> Result<(), actix_web::Error> {
     if password == conn.query_row("SELECT password FROM server", [], |row| {
         row.get::<usize, String>(0)
     }).map_err(|err| ErrorInternalServerError(err))? {
@@ -90,26 +90,6 @@ pub fn preset() -> Result<(), rusqlite::Error> {
 }
 
 #[derive(Serialize)]
-struct Fragment {
-    id: i32,
-    category: String,
-    name: String,
-    lore: String,
-    hp: i16,
-    mp: i16,
-    atk: i16,
-    tec: i16,
-    skill: Option<i32>,
-}
-#[derive(Serialize)]
-struct Skill {
-    id: i32,
-    name: String,
-    lore: String,
-    timing: i8,
-    effect: String,
-}
-#[derive(Serialize)]
 struct Character {
     eno: i16,
     name: String,
@@ -121,63 +101,12 @@ pub(super) struct Password {
     pass: String,
 }
 // 管理者用ページ
-pub async fn index(pass: web::Query<Password>) -> Result<HttpResponse, actix_web::Error> {
+pub(super) async fn index(pass: web::Query<Password>) -> Result<HttpResponse, actix_web::Error> {
 	// データベースに接続
 	let conn = common::open_database()?;
     // URLに含まれるパスワード部分を取得して確認
     check_server_password(&conn, &pass.pass)?;
     // パスワードが一致していればいい感じのを返す
-    // フラグメント
-    let mut stmt = conn.prepare("SELECT id,category,name,lore,status,skill FROM base_fragment")
-        .map_err(|err| ErrorInternalServerError(err))?;
-    let fragments = stmt.query_map([], |row| {
-        let status: [u8; 8] = row.get(4)?;
-        Ok(Fragment{
-            id: row.get(0)?,
-            category: row.get(1)?,
-            name: row.get(2)?,
-            lore: row.get::<_, String>(3)?.replace("<br>", "\n"),
-            hp: (status[0] as i16) << 8 | status[1] as i16,
-            mp: (status[2] as i16) << 8 | status[3] as i16,
-            atk: (status[4] as i16) << 8 | status[5] as i16,
-            tec: (status[6] as i16) << 8 | status[7] as i16,
-            skill: row.get(5)?,
-        })
-    })
-        .map_err(|err| ErrorInternalServerError(err))?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|err| ErrorInternalServerError(err))?;
-    // スキル
-    let mut stmt = conn.prepare("SELECT id,name,lore,type,effect FROM skill")
-        .map_err(|err| ErrorInternalServerError(err))?;
-    let skills = stmt.query_map([], |row| {
-        let effect = battle::Command::convert(row.get(4)?).map_err(|_| rusqlite::Error::InvalidQuery)?;
-        let effect = effect.iter().map(|x| x.to_string()).collect::<Vec<String>>();
-        Ok(Skill{
-            id: row.get(0)?,
-            name: row.get(1)?,
-            lore: row.get::<_, String>(2)?.replace("<br>", "\n"),
-            timing: row.get(3)?,
-            effect: effect.join(" "),
-        })
-    })
-        .map_err(|err| ErrorInternalServerError(err))?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|err| ErrorInternalServerError(err))?;
-    // キャラクター
-    let mut stmt = conn.prepare("SELECT eno,name,location,kins FROM character")
-        .map_err(|err| ErrorInternalServerError(err))?;
-    let characters = stmt.query_map([], |row| {
-        Ok(Character{
-            eno: row.get(0)?,
-            name: row.get(1)?,
-            location: row.get(2)?,
-            kins: row.get(3)?,
-        })
-    })
-        .map_err(|err| ErrorInternalServerError(err))?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|err| ErrorInternalServerError(err))?;
     || -> Result<HttpResponse, liquid::Error> {
         Ok(HttpResponse::Ok()
             .cookie(Cookie::build("admin_password", &pass.pass)
@@ -186,7 +115,7 @@ pub async fn index(pass: web::Query<Password>) -> Result<HttpResponse, actix_web
                 liquid::ParserBuilder::with_stdlib()
                     .build()?
                     .parse(&fs::read_to_string("html/admin.html").unwrap())?
-                    .render(&liquid::object!({"fragment":fragments, "skill":skills, "character":characters}))?
+                    .render(&liquid::object!({}))?
             )
         )
     }().map_err(|err| ErrorInternalServerError(err))
@@ -219,6 +148,7 @@ pub(super) async fn execute_sql(req: HttpRequest, info: web::Json<Sql>) -> Resul
     Ok(format!("成功: {}", info.sql))
 }
 
+// プレイヤー
 #[derive(Deserialize)]
 pub(super) struct CharacterData {
     eno: i16,
@@ -235,6 +165,112 @@ pub(super) async fn update_character(req: HttpRequest, info: web::Json<Character
     // 処理開始
     conn.execute("UPDATE character SET location=?1 WHERE eno=?2", params![info.location, info.eno]).map_err(|err| ErrorBadRequest(err))?;
     Ok(format!("Eno.{}のロケーションを変更しました", info.eno))
+}
+
+// ベースフラグメント
+#[derive(Serialize)]
+pub(super) struct Fragment {
+    id: i32,
+    category: String,
+    name: String,
+    lore: String,
+    status: battle::Status,
+    skill: Option<i32>,
+}
+pub(super) async fn get_fragments(req: HttpRequest) -> Result<web::Json<Vec<Fragment>>, actix_web::Error> {
+    // パスワード取得
+    let password =  req.cookie("admin_password")
+        .ok_or(ErrorForbidden("パスワードが無効です"))?;
+    // データベースに接続
+	let conn = common::open_database()?;
+    // パスワード確認
+    check_server_password(&conn, password.value())?;
+    // 処理開始
+    let mut stmt = conn.prepare("SELECT id,category,name,lore,status,skill FROM base_fragment")
+        .map_err(|err| ErrorInternalServerError(err))?;
+    let result = stmt.query_map([], |row| {
+        Ok(Fragment{
+            id: row.get(0)?,
+            category: row.get(1)?,
+            name: row.get(2)?,
+            lore: row.get::<_, String>(3)?.replace("<br>", "\n"),
+            status: row.get::<_, [u8; 8]>(4)?.into(),
+            skill: row.get(5)?,
+        })
+    })
+        .map_err(|err| ErrorInternalServerError(err))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|err| ErrorInternalServerError(err))?;
+    Ok(web::Json(result))
+}
+#[derive(Deserialize)]
+pub(super) struct FragmentData {
+    id: Option<i32>,
+    category: String,
+    name: String,
+    lore: String,
+    status: battle::Status,
+    skill: Option<i32>,
+}
+pub(super) async fn update_fragment(req: HttpRequest, info: web::Json<FragmentData>) -> Result<String, actix_web::Error> {
+    // パスワード取得
+    let password =  req.cookie("admin_password")
+        .ok_or(ErrorForbidden("パスワードが無効です"))?;
+    // データベースに接続
+	let conn = common::open_database()?;
+    // パスワード確認
+    check_server_password(&conn, password.value())?;
+    // 処理開始
+    let re = Regex::new("\r|\n|\r\n").map_err(|err| ErrorInternalServerError(err))?;
+    let lore = html_special_chars_reverce(&re.replace_all(&info.lore, "<br>").to_string());
+    let status: [u8; 8] = info.status.into();
+    match info.id {
+        Some(id) => {
+            conn.execute("UPDATE base_fragment SET category=?1,name=?2,lore=?3,status=?4,skill=?5 WHERE id=?6", params![info.category, info.name, lore, status, info.skill, id])
+                .map_err(|err| ErrorInternalServerError(err))?;
+            Ok(format!("フラグメント編集 {}: {}", id, info.name))
+        }
+        None => {
+            conn.execute("INSERT INTO base_fragment(category,name,lore,status,skill) VALUES(?1,?2,?3,?4,?5)", params![info.category, info.name, lore, status, info.skill])
+                .map_err(|err| ErrorInternalServerError(err))?;
+            Ok(format!("フラグメント追加 {}: {}", conn.last_insert_rowid(), info.name))
+        }
+    }
+}
+
+// スキル
+#[derive(Serialize)]
+pub(super) struct Skill {
+    id: i32,
+    name: String,
+    lore: String,
+    timing: i8,
+    effect: Vec<battle::Command>,
+}
+pub(super) async fn get_skills(req: HttpRequest) -> Result<web::Json<Vec<Skill>>, actix_web::Error> {
+    // パスワード取得
+    let password =  req.cookie("admin_password")
+        .ok_or(ErrorForbidden("パスワードが無効です"))?;
+	// データベースに接続
+	let conn = common::open_database()?;
+    // パスワード確認
+    check_server_password(&conn, password.value())?;
+    // 処理開始
+    let mut stmt = conn.prepare("SELECT id,name,lore,type,effect FROM skill")
+        .map_err(|err| ErrorInternalServerError(err))?;
+    let result = stmt.query_map([], |row| {
+        Ok(Skill{
+            id: row.get(0)?,
+            name: row.get(1)?,
+            lore: row.get::<_, String>(2)?.replace("<br>", "\n"),
+            timing: row.get(3)?,
+            effect: battle::Command::convert(row.get(4)?).map_err(|_| rusqlite::Error::InvalidQuery)?,
+        })
+    })
+        .map_err(|err| ErrorInternalServerError(err))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|err| ErrorInternalServerError(err))?;
+    Ok(web::Json(result))
 }
 #[derive(Deserialize)]
 pub(super) struct SkillData {
@@ -257,54 +293,8 @@ pub(super) async fn update_skill(req: HttpRequest, info: web::Json<SkillData>) -
     let lore = html_special_chars_reverce(&re.replace_all(&info.lore, "<br>").to_string());
     let mut command: Vec<u8> = Vec::new();
     for s in info.effect.split(&[' ', ',']) {
-        let c = match s {
-            "HP" => battle::Command::Uhp,
-            "MP" => battle::Command::Ump,
-            "ATK" => battle::Command::Uatk,
-            "TEC" => battle::Command::Utec,
-            "自身HP" => battle::Command::Uhp,
-            "自身MP" => battle::Command::Ump,
-            "自身ATK" => battle::Command::Uatk,
-            "自身TEC" => battle::Command::Utec,
-            "相手HP" => battle::Command::Thp,
-            "相手MP" => battle::Command::Tmp,
-            "相手ATK" => battle::Command::Tatk,
-            "相手TEC" => battle::Command::Ttec,
-            "間合値" => battle::Command::ValueRange,
-            "逃走値" => battle::Command::ValueEscape,
-
-            "正" => battle::Command::Plus,
-            "負" => battle::Command::Minus,
-            "+" => battle::Command::Add,
-            "-" => battle::Command::Sub,
-            "*" => battle::Command::Mul,
-            "/" => battle::Command::Div,
-            "%" => battle::Command::Mod,
-            "~" => battle::Command::RandomRange,
-
-            "消耗" => battle::Command::Cost,
-            "強命消耗" => battle::Command::ForceCost,
-            "間合" => battle::Command::Range,
-            "確率" => battle::Command::Random,
-            "中断" => battle::Command::Break,
-
-            "攻撃" => battle::Command::Attack,
-            "貫通攻撃" => battle::Command::ForceAttack,
-            "精神攻撃" => battle::Command::MindAttack,
-            "回復" => battle::Command::Heal,
-            "自傷" => battle::Command::SelfDamage,
-            "集中" => battle::Command::Concentrate,
-            "ATK変化" => battle::Command::BuffAtk,
-            "TEC変化" => battle::Command::BuffTec,
-            "移動" => battle::Command::Move,
-            "間合変更" => battle::Command::ChangeRange,
-            "逃走ライン" => battle::Command::ChangeEscapeRange,
-            "対象変更" => battle::Command::ChangeUser,
-
-            "中断時終了" => battle::Command::BreakToEnd,
-            
-            other => battle::Command::Value(other.parse::<i16>().map_err(|err| ErrorInternalServerError(err))?),
-        }.to_i16();
+        let c = battle::Command::try_from(s.to_string()).map_err(|err| ErrorBadRequest(err))?;
+        let c = i16::from(c);
         command.push((c >> 8) as u8);
         command.push(c as u8);
     }
@@ -322,19 +312,23 @@ pub(super) async fn update_skill(req: HttpRequest, info: web::Json<SkillData>) -
     }
 }
 
-#[derive(Deserialize)]
-pub(super) struct FragmentData {
-    id: Option<i32>,
+#[derive(Serialize)]
+pub(super) struct PlayersFragment {
+    eno: i16,
+    slot: i8,
     category: String,
     name: String,
     lore: String,
-    hp: i16,
-    mp: i16,
-    atk: i16,
-    tec: i16,
+    status: battle::Status,
     skill: Option<i32>,
+    user: bool,
 }
-pub(super) async fn update_fragment(req: HttpRequest, info: web::Json<FragmentData>) -> Result<String, actix_web::Error> {
+#[derive(Deserialize)]
+pub(super) struct PlayerRange {
+    start: i16,
+    end: i16,
+}
+pub(super) async fn get_players_fragments(req: HttpRequest, info: web::Query<PlayerRange>) -> Result<web::Json<Vec<PlayersFragment>>, actix_web::Error> {
     // パスワード取得
     let password =  req.cookie("admin_password")
         .ok_or(ErrorForbidden("パスワードが無効です"))?;
@@ -343,24 +337,53 @@ pub(super) async fn update_fragment(req: HttpRequest, info: web::Json<FragmentDa
     // パスワード確認
     check_server_password(&conn, password.value())?;
     // 処理開始
-    let re = Regex::new("\r|\n|\r\n").map_err(|err| ErrorInternalServerError(err))?;
-    let lore = html_special_chars_reverce(&re.replace_all(&info.lore, "<br>").to_string());
-    let status = [
-        (info.hp >> 8) as u8, info.hp as u8,
-        (info.mp >> 8) as u8, info.mp as u8,
-        (info.atk >> 8) as u8, info.atk as u8,
-        (info.tec >> 8) as u8, info.tec as u8,
-    ];
-    match info.id {
-        Some(id) => {
-            conn.execute("UPDATE base_fragment SET category=?1,name=?2,lore=?3,status=?4,skill=?5 WHERE id=?6", params![info.category, info.name, lore, status, info.skill, id])
-                .map_err(|err| ErrorInternalServerError(err))?;
-            Ok(format!("フラグメント編集 {}: {}", id, info.name))
-        }
-        None => {
-            conn.execute("INSERT INTO base_fragment(category,name,lore,status,skill) VALUES(?1,?2,?3,?4,?5)", params![info.category, info.name, lore, status, info.skill])
-                .map_err(|err| ErrorInternalServerError(err))?;
-            Ok(format!("フラグメント追加 {}: {}", conn.last_insert_rowid(), info.name))
-        }
+    let mut stmt = conn.prepare("SELECT eno,slot,category,name,lore,status,skill,user FROM fragment WHERE eno>=?1 AND eno<?2 ORDER BY eno ASC,slot ASC")
+        .map_err(|err| ErrorInternalServerError(err))?;
+    let result = stmt.query_map([info.start, info.end], |row| {
+        Ok(PlayersFragment {
+            eno: row.get(0)?,
+            slot: row.get(1)?,
+            category: row.get(2)?,
+            name: row.get(3)?,
+            lore: row.get(4)?,
+            status: row.get::<_, [u8; 8]>(5)?.into(),
+            skill: row.get(6)?,
+            user: row.get(7)?,
+        })
+    }).map_err(|err| ErrorInternalServerError(err))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|err| ErrorInternalServerError(err))?;
+    Ok(web::Json(result))
+}
+
+#[derive(Deserialize)]
+pub(super) struct UpdatePlayersFragment {
+    delete: bool,
+    eno: i16,
+    slot: i8,
+    category: String,
+    status: battle::Status,
+    skill: Option<i32>,
+    user: bool,
+}
+pub(super) async fn update_players_fragment(req: HttpRequest, info: web::Json<UpdatePlayersFragment>) -> Result<String, actix_web::Error> {
+    // パスワード取得
+    let password =  req.cookie("admin_password")
+        .ok_or(ErrorForbidden("パスワードが無効です"))?;
+    // データベースに接続
+	let conn = common::open_database()?;
+    // パスワード確認
+    check_server_password(&conn, password.value())?;
+    // 処理開始
+    if info.delete {
+        conn.execute("DELETE FROM fragment WHERE eno=?1 AND slot=?2", params![info.eno, info.slot])
+            .map_err(|err| ErrorInternalServerError(err))?;
+    } else {
+        let status: [u8; 8] = info.status.into();
+        conn.execute(
+            "UPDATE fragment SET category=?1,status=?2,skill=?3,user=?4 WHERE eno=?5 AND slot=?6",
+            params![info.category, status, info.skill, info.user, info.eno, info.slot],
+        ).map_err(|err| ErrorInternalServerError(err))?;
     }
+    Ok(format!("プレイヤーフラグメント編集 Eno.{}({})", info.eno, info.slot))
 }

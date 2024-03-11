@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <head>
-	<meta charset="UTF-8">
+	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width,initial-scale=1">
 	<title>"Strings"</title>
 	<link rel="preconnect" href="https://fonts.googleapis.com">
@@ -14,121 +14,80 @@
 	<script src="js/ajax.class.js"></script>
 	<script src="js/common.js"></script>
 	<script src="js/admin/index.js"></script>
+	<template id="template">
+		<div class="fragment">
+			<p class="id"></p>
+			<input type="text" name="category" class="category">
+			<input type="text" name="name" class="name">
+			<textarea name="lore" class="lore"></textarea>
+			<input type="number" name="hp" class="hp">
+			<input type="number" name="mp" class="mp">
+			<input type="number" name="atk" class="atk">
+			<input type="number" name="tec" class="tec">
+			<input type="number" name="skill" class="skill" onchange="this.nextElementSibling.innerText = get_skill_name(this.value)">
+			<p class="skill_name"></p>
+			<button type="button" onclick="update_fragment(this.parentNode)">更新</button>
+		</div>
+		<div class="skill">
+			<p class="id"></p>
+			<input type="text" name="name" class="name">
+			<textarea name="lore" class="lore"></textarea>
+			<select name="timing" class="timing">
+				<option value="0">通常</option>
+				<option value="1">反応</option>
+				<option value="2">開始</option>
+				<option value="3">勝利</option>
+				<option value="4">敗北</option>
+				<option value="5">逃走</option>
+				<option value="-2">無感</option>
+				<option value="-1">世界観</option>
+			</select>
+			<input type="text" name="effect" class="effect">
+			<button type="button" onclick="update_skill(this.parentNode)">更新</button>
+		</div>
+		<div class="player_fragment">
+			<p class="eno"></p>
+			<p class="slot"></p>
+			<input type="text" name="category" class="category">
+			<input type="checkbox" name="user" class="user">
+			<p class="name"></p>
+			<p class="lore"></p>
+			<input type="number" name="hp" class="hp">
+			<input type="number" name="mp" class="mp">
+			<input type="number" name="atk" class="atk">
+			<input type="number" name="tec" class="tec">
+			<input type="number" name="skill" class="skill">
+			<p class="skill_name"></p>
+			<button type="button" class="update" onclick="update_player_fragment(this.parentNode)">更新</button>
+			<button type="button" class="delete" onclick="update_player_fragment(this.parentNode, true)">削除</button>
+		</div>
+		<div class="load_players_fragments">
+			<input type="number" name="min"> ~ <input type="number" name="max">
+			<button type="button" onclick="call_load_players_fragments(this.parentNode)">取得</button>
+		</div>
+	</template>
 </head>
-<body>
+<body class="scroll">
 	<h2>"Strings".admin</h2>
+	<h3 onclick="this.nextElementSibling.classList.toggle('hide')">コンソール</h3>
 	<div>
-		<h3>コンソール</h3>
-		<form>
-			<textarea id="input" name="input"></textarea>
-			<button type="button" onclick="sql()">SQL実行</button>
-			<button type="button" onclick="make_fragments_skills(document.getElementById('input').value)">スキル・フラグメント作成</button>
-		</form>
-		<div id="output"></div>
+		<textarea id="input"></textarea>
+		<button onclick="execute_sql(document.getElementById('input').value)">SQL実行</button>
+		<button onclick="make_fragments_skills(document.getElementById('input').value)">スキル・フラグメント作成</button>
 	</div>
+	<h3 onclick="this.nextElementSibling.classList.toggle('hide')">スキル</h3>
 	<div>
-		<h3>キャラクター</h3>
-		<div class="grid">
-			{% for c in character %}
-			<div>
-				<p>Eno.<span class="eno">{{c.eno}}</span> {{c.name}}</p>
-				<label>現在地 <input type="text" name="location" value="{{c.location}}"></label>
-				<p>{{c.kins}}キンス</p>
-				<button type="button" onclick="update_character(this.parentNode)">更新</button>
-			</div>
-			{% endfor %}
-		</div>
+		<button type="button" onclick="load_skills(this.parentNode)">取得</button>
 	</div>
+	<h3 onclick="this.nextElementSibling.classList.toggle('hide')">フラグメント</h3>
 	<div>
-		<h3>ベースフラグメント</h3>
-		<div class="grid">
-			{% for f in fragment %}
-			<div class="fragment" data-id="{{f.id}}">
-				<input type="text" name="category" placeholder="カテゴリ" value="{{f.category}}">
-				<input type="text" name="name" placeholder="フラグメント名" value="{{f.name}}">
-				<textarea name="lore" placeholder="説明文">{{f.lore}}</textarea>
-				<label>HP<input type="number" name="hp" class="val" value="{{f.hp}}"></label>
-				<label>MP<input type="number" name="mp" class="val" value="{{f.mp}}"></label>
-				<label>ATK<input type="number" name="atk" class="val" value="{{f.atk}}"></label>
-				<label>TEC<input type="number" name="tec" class="val" value="{{f.tec}}"></label>
-				<label class="skill">スキル<input name="skill" type="number" value="{{f.skill}}"></label>
-				<button type="button" onclick="update_fragment(this.parentNode)">更新</button>
-			</div>
-			{% endfor %}
-		</div>
-		<div class="fragment form">
-			<input type="text" name="category" placeholder="カテゴリ">
-			<input type="text" name="name" placeholder="フラグメント名">
-			<textarea name="lore" placeholder="説明文"></textarea>
-			<label>HP<input type="number" name="hp" class="val"></label>
-			<label>MP<input type="number" name="mp" class="val"></label>
-			<label>ATK<input type="number" name="atk" class="val"></label>
-			<label>TEC<input type="number" name="tec" class="val"></label>
-			<label class="skill">スキル<input name="skill" type="text"></label>
-			<button type="button" onclick="update_fragment(this.parentNode, true)">追加</button>
-		</div>
+		<button type="button" onclick="load_fragments(this.parentNode)">取得</button>
 	</div>
+	<h3 onclick="this.nextElementSibling.classList.toggle('hide')">プレイヤーフラグメント</h3>
 	<div>
-		<h3>スキル</h3>
-		<details>
-			<summary>スキル式コマンド一覧</summary>
-			HP<br>
-			MP<br>
-			ATK<br>
-			TEC<br>
-			自身HP<br>
-			自身MP<br>
-			自身ATK<br>
-			自身TEC<br>
-			相手HP<br>
-			相手MP<br>
-			相手ATK<br>
-			相手TEC<br>
-			間合値<br>
-			逃走値<br>
-			正<br>
-			負<br>
-			+<br>
-			-<br>
-			*<br>
-			/<br>
-			%<br>
-			~<br>
-			消耗<br>
-			強命消耗<br>
-			間合<br>
-			確率<br>
-			中断<br>
-			攻撃<br>
-			貫通攻撃<br>
-			精神攻撃<br>
-			回復<br>
-			自傷<br>
-			集中<br>
-			ATK変化<br>
-			TEC変化<br>
-			移動<br>
-			間合変更<br>
-			逃走ライン<br>
-			対象変更<br>
-		</details>
-		<div class="grid">
-			{% for s in skill %}
-			<div class="skill" data-id="{{s.id}}">
-				<input type="text" name="name" placeholder="スキル名" value="{{s.name}}">
-				<textarea name="lore" placeholder="説明文">{{s.lore}}</textarea>
-				<label>発動条件<select name="timing" data-timing="{{s.timing}}"><option value="0">通常</option><option value="1">反応</option><option value="2">開始</option><option value="3">勝利</option><option value="4">敗北</option><option value="5">無感</option></select></label>
-				<input name="effect" type="text" value="{{s.effect}}">
-				<button type="button" onclick="update_skill(this.parentNode)">更新</button>
-			</div>
-			{% endfor %}
-		</div>
-		<div class="skill form">
-			<input type="text" name="name" placeholder="スキル名">
-			<textarea name="lore" placeholder="説明文"></textarea>
-			<label>発動条件<select name="timing"><option value="0">通常</option><option value="1">反応</option><option value="2">開始</option><option value="3">勝利</option><option value="4">敗北</option><option value="5">無感</option></select></label>
-			<input name="effect" type="text">
-			<button type="button" onclick="update_skill(this.parentNode, true)">追加</button>
+		<div class="load_players_fragments">
+			<input type="number" name="min" value="1"> ~ <input type="number" name="max" value="31">
+			<button type="button" onclick="call_load_players_fragments(this.parentNode)">取得</button>
 		</div>
 	</div>
 </body>

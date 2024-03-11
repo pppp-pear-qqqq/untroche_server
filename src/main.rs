@@ -23,7 +23,9 @@ async fn main() -> Result<(), std::io::Error> {
 }
 
 // fn main() {
-//     strings::test();
+//     let text = "test";
+//     let buf = &text[text.len()..];
+//     println!("{}", buf);
 // }
 
 async fn index() -> Result<HttpResponse, actix_web::Error> {

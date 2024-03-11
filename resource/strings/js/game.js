@@ -125,11 +125,23 @@ function load_timeline(container, num, start, from, to, location, word) {
 				if (i['location'] === null) {
 					location.innerHTML = '<img src="strings/pic/lock_fill.svg" width="21" height="21">';
 					lock = true;
+				} else {
+					location.innerText = i['location'];
 				}
-				else location.innerText = i['location'];
+				const talk = e.querySelector('.talk');
+				if (i['from'] !== eno) {
+					e.querySelector('.delete').remove();
+				} else {
+					e.querySelector('.delete').onclick = () => {
+						alertify.confirm('発言を削除します。よろしいですか？', () => {
+							delete_chat(i['id'], talk);
+						})
+					}
+				}
 				const name = e.querySelector('.name');
 				name.innerText = i['name'];
 				name.onclick = () => load_profile(i['from']);
+				e.querySelector('.acronym').innerText = i['acronym'];
 				e.querySelector('.eno').innerText = `Eno.${i['from']}`;
 				e.querySelector('.id').innerText = `id:${i['id']}`;
 				e.querySelector('.timestamp').innerText = i['timestamp'];
@@ -138,15 +150,18 @@ function load_timeline(container, num, start, from, to, location, word) {
 				e.querySelector('.reply').onclick = () => to_chat(i['from'], lock, `>>${i['id']}`);
 				return e;
 			}, make_element('<div class="talk"><p class="word">発言がありません</p></div>'), true);
-			const update = document.createElement('div');
-			update.className = 'update';
-			update.innerText = '更新';
+			if (ret.length > 0) {
+				const back = make_element('<div class="talk">前の発言</div>');
+				back.onclick = () => load_timeline(container, num, ret[ret.length - 1]['id'], from, to, location, word);
+				container.insertBefore(back, container.firstChild);
+			}
+			const update = make_element('<div class="update">更新</div>');
 			update.onclick = () => {
-				const params = JSON.parse(select_tab_timeline.dataset.get);
-				load_timeline(document.querySelector('#chat .log'), params['num'], params['start'], params['from'], params['to'], params['location'], params['word']);
+				load_timeline(container, num, null, from, to, location, word);
 				alertify.success('更新しました');
 			}
 			container.appendChild(update);
+			container.parentNode.scrollTo(0, 0);
 		}
 	});
 }
@@ -473,6 +488,17 @@ function talk() {
 		});
 	} else alertify.error('発言内容がありません');
 }
+function delete_chat(id, elem) {
+	ajax.open({
+		url: 'strings/delete_chat',
+		post: {id: id},
+		ok: () => {
+			alertify.success('発言を削除しました');
+			if (elem !== undefined && elem !== null)
+				elem.remove();
+		}
+	})
+}
 function preview_open() {
 	const form = document.querySelector('#chat>.talk');
 	const name = form.querySelector('[name=name]').value;
@@ -798,6 +824,7 @@ function calc_cost() {
 		}
 	});
 	if (!find) cost += 10;
+	cost = Math.max(cost, 10);
 	create.querySelector('.cost').dataset.cost = cost;
 }
 function create_fragment() {

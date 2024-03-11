@@ -1,7 +1,6 @@
 #main {
 	flex-direction: column;
 	text-align: center;
-	margin: auto 0;
 	h1 {
 		font-weight: normal;
 		border-bottom: 1px solid #767676;
@@ -52,7 +51,7 @@
 	}
 }
 #blank {
-	margin-bottom: calc(50vh - 2lh);
+	margin-bottom: 45vh;
 }
 .desc {
 	width: fit-content;

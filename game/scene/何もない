@@ -1,6 +1,6 @@
 この場所には何もない。
-<br>$(草原へ,草原)
+\
+$(草原へ,草原)
 !yield select
-!location select
-<br>……
-…………
+\
+!location %select

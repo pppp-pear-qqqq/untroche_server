@@ -1,16 +1,29 @@
-「あっ！　そこのアナタ～……<br>　『ガチャ』、回したくないですか～～？」
-「ここでしか手に入らない記念品が盛りだくさん！<br>　持っていれば親族友人に自慢して回れる素敵アイテムばかり！」
+「あっ！　そこのアナタ～……\
+　『ガチャ』、回したくないですか～～？」
+\
+「ここでしか手に入らない記念品が盛りだくさん！\
+　持っていれば親族友人に自慢して回れる素敵アイテムばかり！」
+\
 「そんな特別なガチャがなんと～～～～…………」
+\
 「いまだけ～～～～…………」
-「<span class="large"><span class="large"><span class="large rainbow">100,000キンス</span></span></span>で回せちゃう！<br>　こりゃあ回すしかありませんよォ～！！」<br><br>$(10回回す,ten)<br>$(1回回す,one)<br>$(回さない,leave)
+\
+「<span class="large"><span class="large"><span class="large rainbow">100,000キンス</span></span></span>で回せちゃう！\
+　こりゃあ回すしかありませんよォ～！！」\
+\
+$(10回回す,ten)\
+$(1回回す,one)\
+$(回さない,leave)
 !yield select
+\
 !match select{
 	ten{
-		!kins -1000000 cost
+		!kins -1000000 cost;\
+		\
 		!match cost {
 			true{
-				<br><br>「毎度ありィ！」
-				<br><br>!fragment 記念
+				「毎度ありィ！」
+				\
 				!fragment 記念
 				!fragment 記念
 				!fragment 記念
@@ -20,37 +33,34 @@
 				!fragment 記念
 				!fragment 記念
 				!fragment 記念
-				<br>「良いものは引けましたかぁ？<br>　またお越しくださいネ～～！！！！」
-				<br>……
-				…………
+				!fragment 記念
+				\
+				「良いものは引けましたかぁ？\
+				　またお越しくださいネ～～！！！！」
 			}
 			false{
-				<br><br>「ちッ！　貧乏人が！！！！」
-				<br>……
-				…………
+				「ちッ！　貧乏人が！！！！」
 			}
 		}
 	}
 	one{
-		!kins -100000 cost
+		!kins -100000 cost;\
+		\
 		!match cost {
 			true{
-				<br><br>「毎度ありィ！」
-				<br>!fragment 記念
-				<br>「良いものは引けましたかぁ？<br>　またお越しくださいネ～～！！！！」
-				<br>……
-				…………
+				「毎度ありィ！」
+				\
+				!fragment 記念
+				\
+				「良いものは引けましたかぁ？\
+				　またお越しくださいネ～～！！！！」
 			}
 			false{
-				<br><br>「ちッ！　貧乏人が！！！！」
-				<br>……
-				…………
+				「ちッ！　貧乏人が！！！！」
 			}
 		}
 	}
 	leave{
 		「ちッ！　貧乏人が！！！！」
-		<br>……
-		…………
 	}
 }

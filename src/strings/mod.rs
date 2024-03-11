@@ -24,6 +24,7 @@ pub fn config(cfg: &mut web::ServiceConfig) {
 		.route("/register", web::post().to(func::register))
 		.route("/login", web::post().to(func::login))
 		.route("/send_chat", web::post().to(func::send_chat))
+		.route("/delete_chat", web::post().to(func::delete_chat))
 		.route("/update_fragments", web::post().to(func::update_fragments))
 		.route("/create_fragment", web::post().to(func::create_fragment))
 		.route("/update_profile", web::post().to(func::update_profile))
@@ -41,10 +42,14 @@ pub fn config(cfg: &mut web::ServiceConfig) {
 		.route("/get_battle_reserve", web::get().to(func::get_battle_reserve))
 		.route("/next", web::post().to(scene::next))
 		.route("/admin", web::get().to(admin::index))
+		.route("/admin/get_fragments", web::get().to(admin::get_fragments))
+		.route("/admin/get_skills", web::get().to(admin::get_skills))
+		.route("/admin/get_players_fragments", web::get().to(admin::get_players_fragments))
 		.route("/admin/execute_sql", web::post().to(admin::execute_sql))
 		.route("/admin/update_character", web::post().to(admin::update_character))
-		.route("/admin/update_skill", web::post().to(admin::update_skill))
 		.route("/admin/update_fragment", web::post().to(admin::update_fragment))
+		.route("/admin/update_skill", web::post().to(admin::update_skill))
+		.route("/admin/update_players_fragment", web::post().to(admin::update_players_fragment))
         .service(Files::new("/", "resource/strings").show_files_listing())
     );
 }
@@ -97,7 +102,7 @@ async fn index(req: HttpRequest) -> Result<HttpResponse, actix_web::Error> {
                     params![eno],
                     |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?))
                 ).map_err(|err| ErrorInternalServerError(err))?;
-            let display: Vec<&str> = if display != "" { display.split("\r\n").collect() } else { Vec::new() };
+            let display: Vec<&str> = if display != "" { display.split('\n').collect() } else { Vec::new() };
             let lore: String = conn.query_row("SELECT lore FROM location WHERE name=?1", params![location], |row| Ok(row.get(0)?))
                 .unwrap_or("この場所の情報はない。".to_string());
             // 返却

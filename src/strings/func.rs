@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use unicode_segmentation::UnicodeSegmentation;
 use uuid::Uuid;
 
-use super::{battle, common, FormFragment};
+use super::{admin, battle, common, FormFragment};
 
 // アプリケーション部分
 #[derive(Deserialize)]
@@ -140,15 +140,18 @@ pub(super) async fn send_chat(req: HttpRequest, info: web::Json<SendChatData>) -
         }
         // ログインセッションをデータベースと照会
         let eno = common::session_to_eno(&conn, session.value())?;
-        // 発言色・現在地を取得
-        let (color, location): ([u8; 3], String) = conn.query_row("SELECT color,location FROM character WHERE eno=?1", params![eno], |row|Ok((row.get(0)?, row.get(1)?)))
-            .map_err(|err| ErrorInternalServerError(err))?;
+        // 短縮名・発言色・現在地を取得
+        let (acronym, color, location): (String, [u8; 3], String) = conn.query_row(
+            "SELECT acronym,color,location FROM character WHERE eno=?1",
+            params![eno],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        ).map_err(|err| ErrorInternalServerError(err))?;
         // タグを置換
         word = common::replace_tag(&word, eno, false).map_err(|err| ErrorInternalServerError(err))?;
         // 発言をデータベースに格納
         conn.execute(
-            "INSERT INTO timeline(from_eno,to_eno,location,color,name,word) VALUES(?1,?2,?3,?4,?5,?6)",
-            params![eno, info.to, if info.location { None } else { Some(location) }, color, info.name, word],
+            "INSERT INTO timeline(from_eno,to_eno,location,acronym,color,name,word) VALUES(?1,?2,?3,?4,?5,?6,?7)",
+            params![eno, info.to, if info.location { None } else { Some(location) }, acronym, color, info.name, word],
         ).map_err(|err| ErrorInternalServerError(err))?;
         if let Some(h) = handle {
             let _ = h.await;
@@ -157,6 +160,32 @@ pub(super) async fn send_chat(req: HttpRequest, info: web::Json<SendChatData>) -
     } else {
         Err(ErrorBadRequest("名前、または発言内容が長すぎます"))
     }
+}
+
+#[derive(Deserialize)]
+pub(super) struct DeleteChatData {
+    id: i32,
+}
+pub(super) async fn delete_chat(req: HttpRequest, info: web::Json<DeleteChatData>) -> Result<String, actix_web::Error> {
+    // ログインセッションを取得
+    let session =  req.cookie("login_session")
+        .ok_or(ErrorBadRequest("ログインセッションがありません"))?;
+    // データベースに接続
+    let conn = common::open_database()?;
+    // サーバーの状態を確認
+    if let Err(state) = common::check_server_state(&conn)? {
+        match state.as_str() {
+            "maintenance" => return Err(ErrorServiceUnavailable(common::SERVER_MAINTENANCE_TEXT)),
+            "end" => return Err(ErrorServiceUnavailable(common::SERVER_END_TEXT)),
+            _ => return Err(ErrorInternalServerError(common::SERVER_UNDEFINED_TEXT))
+        }
+    }
+    // Enoを取得
+    let eno = common::session_to_eno(&conn, session.value())?;
+    // 削除できなかった時にキャッチする方法が特にない
+    conn.execute("UPDATE timeline SET live=false WHERE id=?1 AND from_eno=?2", params![info.id, eno])
+        .map_err(|err| ErrorInternalServerError(err))?;
+    Ok(String::new())
 }
 
 #[derive(Deserialize)]
@@ -176,6 +205,7 @@ pub(super) struct Chat {
     to: Option<i16>,
     location: Option<String>,
     color: [u8; 3],
+    acronym: String,
     name: String,
     word: String,
 }
@@ -185,7 +215,13 @@ pub(super) async fn get_chat(req: HttpRequest, info: web::Query<GetChatData>) ->
     // サーバーの状態を確認
     if let Err(state) = common::check_server_state(&conn)? {
         match state.as_str() {
-            "maintenance" => return Err(ErrorServiceUnavailable(common::SERVER_MAINTENANCE_TEXT)),
+            "maintenance" => {
+                // パスワード取得
+                let password =  req.cookie("admin_password")
+                    .ok_or(ErrorServiceUnavailable(common::SERVER_MAINTENANCE_TEXT))?;
+                // パスワード確認
+                admin::check_server_password(&conn, password.value())?;
+            },
             "end" => (),
             _ => return Err(ErrorInternalServerError(common::SERVER_UNDEFINED_TEXT))
         }
@@ -345,8 +381,7 @@ pub(super) async fn get_chat(req: HttpRequest, info: web::Query<GetChatData>) ->
             return Err(ErrorBadRequest("検索する文字列が長すぎます"));
         }
     }
-    let sql = sql.join(" AND ");
-    let sql = "SELECT id,datetime(timestamp,'+9 hours'),from_eno,to_eno,location,color,name,word FROM timeline".to_string() + if sql != "" { " WHERE " } else { "" } + &sql + " ORDER BY id DESC LIMIT :num";
+    let sql = "SELECT id,datetime(timestamp,'+9 hours'),from_eno,to_eno,location,acronym,color,name,word FROM timeline WHERE live=true".to_string() + if sql.is_empty() { "" } else { " AND " } + &sql.join(" AND ") + " ORDER BY id DESC LIMIT :num";
     // println!("{}", sql);
     // データベースから取得
     || -> Result<_, rusqlite::Error> {
@@ -360,9 +395,10 @@ pub(super) async fn get_chat(req: HttpRequest, info: web::Query<GetChatData>) ->
                     from: row.get(2)?,
                     to: row.get(3)?,
                     location: row.get(4)?,
-                    color: row.get(5)?,
-                    name: row.get(6)?,
-                    word: row.get(7)?,
+                    acronym: row.get(5)?,
+                    color: row.get(6)?,
+                    name: row.get(7)?,
+                    word: row.get(8)?,
                 })
             }
         )?.collect::<Result<Vec<_>, _>>()?;
@@ -483,6 +519,7 @@ pub(super) struct Fragment {
     atk: i16,
     tec: i16,
     skill: Option<Skill>,
+    user: bool,
 }
 pub(super) async fn get_fragments(req: HttpRequest) -> Result<web::Json<Vec<Fragment>>, actix_web::Error> {
     // ログインセッションを取得
@@ -502,12 +539,12 @@ pub(super) async fn get_fragments(req: HttpRequest) -> Result<web::Json<Vec<Frag
     let eno = common::session_to_eno(&conn, session.value())?;
     // 取得・整形
     || -> Result<_, rusqlite::Error> {
-        let mut stmt = conn.prepare("WITH f AS (SELECT slot,category,name,lore,status,skill,skillname,skillword FROM fragment WHERE eno=?1) SELECT f.*,s.name,s.lore,s.type,s.effect FROM f LEFT OUTER JOIN skill s ON f.skill=s.id")?;
+        let mut stmt = conn.prepare("WITH f AS (SELECT slot,category,name,lore,status,skill,skillname,skillword,user FROM fragment WHERE eno=?1) SELECT f.*,s.name,s.lore,s.type,s.effect FROM f LEFT OUTER JOIN skill s ON f.skill=s.id")?;
         let result = stmt.query_map(params![eno], |row| {
             // ステータスの原型
             let status: Vec<u8> = row.get(4)?;
             // スキルの有無を判定・整形
-            let skill = if let (Some(id), Some(name), Some(lore), Some(timing), Some(effect)) = (row.get(5)?, row.get(8)?, row.get(9)?, row.get(10)?, row.get(11)?) {
+            let skill = if let (Some(id), Some(name), Some(lore), Some(timing), Some(effect)) = (row.get(5)?, row.get(9)?, row.get(10)?, row.get::<_, Option<i8>>(11)?, row.get(12)?) {
                 Some(Skill {
                     id,
                     name: row.get(6)?,
@@ -515,7 +552,7 @@ pub(super) async fn get_fragments(req: HttpRequest) -> Result<web::Json<Vec<Frag
                     default_name: name,
                     lore,
                     timing: battle::Timing::from(timing),
-                    effect: battle::Command::convert(effect).map_err(|_| rusqlite::Error::InvalidColumnType(0, "skill.effect".to_string(), Type::Text))?,
+                    effect: battle::Command::convert(effect).map_err(|_| rusqlite::Error::InvalidColumnType(12, "skill.effect".to_string(), Type::Blob))?,
                 })
             } else { None };
             // 取得返却
@@ -529,6 +566,7 @@ pub(super) async fn get_fragments(req: HttpRequest) -> Result<web::Json<Vec<Frag
                 atk: (status[4] as i16) << 8 | status[5] as i16,
                 tec: (status[6] as i16) << 8 | status[7] as i16,
                 skill,
+                user: row.get(8)?,
             })
         })?.collect::<Result<Vec<_>, _>>()?;
         Ok(web::Json(result))
@@ -555,6 +593,7 @@ struct UpdateFragment {
     lore: String,
     status: [u8; 8],
     skill: Option<i32>,
+    user: bool,
 }
 struct PartFragmentSkill {
     skill_name: Option<String>,
@@ -583,7 +622,7 @@ pub(super) async fn update_fragments(req: HttpRequest, info: web::Json<UpdateFra
     let eno = common::session_to_eno(&conn, session.value())?;
     // フラグメントの一覧を取得
     let result = || -> Result<_, rusqlite::Error> {
-        let mut stmt = conn.prepare("SELECT slot,category,name,lore,status,skill FROM fragment WHERE eno=?1")?;
+        let mut stmt = conn.prepare("SELECT slot,category,name,lore,status,skill,user FROM fragment WHERE eno=?1")?;
         let result = stmt.query_map(params![eno], |row| {
             Ok(UpdateFragment {
                 slot: row.get(0)?,
@@ -592,6 +631,7 @@ pub(super) async fn update_fragments(req: HttpRequest, info: web::Json<UpdateFra
                 lore: row.get(3)?,
                 status: row.get(4)?,
                 skill: row.get(5)?,
+                user: row.get(6)?,
             })
         })?.collect::<Result<Vec<_>, _>>()?;
         Ok(result)
@@ -624,7 +664,7 @@ pub(super) async fn update_fragments(req: HttpRequest, info: web::Json<UpdateFra
             // 変更元を取得
             if let Some(f) = result.iter().find(|x| x.slot == i.prev) {
                 // 移動先フラグメントを取得（本来削除済みなのでないはず、あるとしたら更新順序）
-                match conn.query_row("SELECT slot,category,name,lore,status,skill,skillname,skillword FROM fragment WHERE eno=?1 AND slot=?2", params![eno, i.next], |row| {
+                match conn.query_row("SELECT slot,category,name,lore,status,skill,skillname,skillword,user FROM fragment WHERE eno=?1 AND slot=?2", params![eno, i.next], |row| {
                     Ok((UpdateFragment {
                         slot: row.get(0)?,
                         category: row.get(1)?,
@@ -632,6 +672,7 @@ pub(super) async fn update_fragments(req: HttpRequest, info: web::Json<UpdateFra
                         lore: row.get(3)?,
                         status: row.get(4)?,
                         skill: row.get(5)?,
+                        user: row.get(8)?,
                     },PartFragmentSkill {
                         skill_name: row.get(6)?,
                         skill_word: row.get(7)?,
@@ -665,7 +706,7 @@ pub(super) async fn update_fragments(req: HttpRequest, info: web::Json<UpdateFra
                     }
                 }
                 // 新しいフラグメントを追加
-                conn.execute("INSERT INTO fragment VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)",
+                conn.execute("INSERT INTO fragment VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
                     params![
                         eno,
                         slot,
@@ -676,6 +717,7 @@ pub(super) async fn update_fragments(req: HttpRequest, info: web::Json<UpdateFra
                         f.skill,
                         i.skill_name,
                         i.skill_word,
+                        f.user,
                     ]
                 ).map_err(|err| ErrorInternalServerError(err))?;
             }
@@ -698,6 +740,7 @@ pub(super) async fn update_fragments(req: HttpRequest, info: web::Json<UpdateFra
                     i.0.skill,
                     i.1.skill_name,
                     i.1.skill_word,
+                    i.0.user,
                 ]
             ).map_err(|err| ErrorInternalServerError(err))?;
         } else {
@@ -736,6 +779,7 @@ struct CreateFragmentPredicate {
     has_skill: bool,
 }
 pub(super) async fn create_fragment(req: HttpRequest, info: web::Json<CreateFragmentData>) -> Result<Json<i32>, actix_web::Error> {
+    return Err(ErrorBadRequest("現在フラグメント合成機能は凍結中です。<br>もうしばらくお待ちください。"));
     if info.force != Some(true) {
         // カテゴリ制限
         match info.category.as_str() {
@@ -752,8 +796,8 @@ pub(super) async fn create_fragment(req: HttpRequest, info: web::Json<CreateFrag
         if !(1..=16).contains(&info.name.grapheme_indices(true).count()) {
             return Err(ErrorBadRequest("フラグメント名は1文字以上16文字以下に設定してください"));
         }
-        if info.lore.grapheme_indices(true).count() > 120 || info.lore.lines().count() > 4 {
-            return Err(ErrorBadRequest("説明文は4行120文字以内に設定してください"));
+        if info.lore.grapheme_indices(true).count() > 200 {
+            return Err(ErrorBadRequest("説明文は200文字以内に設定してください"));
         }
         // マテリアル個数制限
         if info.material.len() < 2 {
@@ -785,7 +829,7 @@ pub(super) async fn create_fragment(req: HttpRequest, info: web::Json<CreateFrag
         .map_err(|err| ErrorInternalServerError(err))?;
     // フラグメントの一覧を取得
     let result = || -> Result<_, rusqlite::Error> {
-        let mut stmt = conn.prepare("SELECT slot,category,name,lore,status,skill FROM fragment WHERE eno=?1")?;
+        let mut stmt = conn.prepare("SELECT slot,category,name,lore,status,skill,user FROM fragment WHERE eno=?1")?;
         let result = stmt.query_map(params![eno], |row| {
             Ok(UpdateFragment {
                 slot: row.get(0)?,
@@ -794,6 +838,7 @@ pub(super) async fn create_fragment(req: HttpRequest, info: web::Json<CreateFrag
                 lore: row.get(3)?,
                 status: row.get(4)?,
                 skill: row.get(5)?,
+                user: row.get(6)?,
             })
         })?.collect::<Result<Vec<_>, _>>()?;
         Ok(result)
@@ -866,6 +911,7 @@ pub(super) async fn create_fragment(req: HttpRequest, info: web::Json<CreateFrag
     }
     // 素材の数*10だけ割引
     cost -= info.material.len() as i32 * 10;
+    cost = cost.max(10);
     // キンス取得
     let kins: i32 = conn.query_row("SELECT kins FROM character WHERE eno=?1", params![eno], |row| Ok(row.get(0)?))
         .map_err(|err| ErrorInternalServerError(err))?;
@@ -889,7 +935,7 @@ pub(super) async fn create_fragment(req: HttpRequest, info: web::Json<CreateFrag
                 (info.tec >> 8) as u8, info.tec as u8,
             ];
             // フラグメント追加
-            conn.execute("INSERT INTO fragment(eno,slot,category,name,lore,status,skill) VALUES(?1,?2,?3,?4,?5,?6,?7)",
+            conn.execute("INSERT INTO fragment(eno,slot,category,name,lore,status,skill,user) VALUES(?1,?2,?3,?4,?5,?6,?7,true)",
                 params![
                     eno,
                     slot,
@@ -1237,7 +1283,7 @@ pub(super) async fn receive_battle(req: HttpRequest, info: web::Json<ReceiveBatt
                 // 攻撃者に連絡
                 let handle = actix_rt::spawn(common::send_webhook(info.from, format!("Eno.{} との戦闘が開始しました。", eno)));
                 // 戦闘処理
-                let log = battle::battle(info.from, eno).map_err(|err| ErrorInternalServerError(err))?;
+                let log = battle::battle([info.from, eno]).map_err(|err| ErrorInternalServerError(err))?;
                 let log_json = serde_json::to_string(&log).map_err(|err| ErrorInternalServerError(err))?;
                 // データベースに保存
                 conn.execute(
@@ -1296,7 +1342,7 @@ pub(super) async fn receive_battle(req: HttpRequest, info: web::Json<ReceiveBatt
 }
 
 fn take_fragment(conn: &Connection, win: i16, lose: i16) -> Result<Option<String>, rusqlite::Error> {
-    let mut stmt = conn.prepare("SELECT slot,category,name,lore,status,skill FROM fragment WHERE eno=?1 AND slot<=20")?;
+    let mut stmt = conn.prepare("SELECT slot,category,name,lore,status,skill,user FROM fragment WHERE eno=?1 AND slot<=20")?;
     // 候補の取得
     let result = stmt.query_map(params![lose], |row| {
         Ok(UpdateFragment{
@@ -1306,6 +1352,7 @@ fn take_fragment(conn: &Connection, win: i16, lose: i16) -> Result<Option<String
             lore: row.get(3)?,
             status: row.get(4)?,
             skill: row.get(5)?,
+            user: row.get(6)?,
         })
     })?.collect::<Result<Vec<_>, _>>()?;
     // 移動対象を決定

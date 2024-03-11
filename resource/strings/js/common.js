@@ -69,7 +69,7 @@ function array_to_colorcode(arg) {
 }
 
 function reset_timeline() {
-	localStorage.setItem('timeline','[{"name":"現在位置","get":"{\'num\':20}"},{"name":"自分関連","get":"{\'num\':\'20\',\'from\':0,\'to\':0,\'location\':\'*\'}"}]');
+	localStorage.setItem('timeline','[{"name":"現在位置","get":"{\'num\':30}"},{"name":"自分関連","get":"{\'num\':\'30\',\'from\':0,\'to\':0,\'location\':\'*\'}"}]');
 }
 
 /**
@@ -85,7 +85,7 @@ function replace_decoration_tag(text) {
 		.replaceAll('<','&lt;')
 		.replaceAll('>','&gt;')
 		.replace(/\r|\n|\r\n/g,'<br>')
-		.replace(/\[(.+)\|(.*)\|\1\]/g, (_, p1, p2) => {
+		.replace(/\[(.+)\|([\s\S]*?)\|\1\]/g, (_, p1, p2) => {
 			switch (p1) {
 				case 'b': case 'bold': return `<span class="bold">${p2}</span>`;
 				case 'i': case 'italic': return `<span class="italic">${p2}</span>`;

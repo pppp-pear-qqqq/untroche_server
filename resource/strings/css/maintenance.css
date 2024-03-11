@@ -1,16 +1,10 @@
 #game {
-	position: fixed;
-	left: 0;
-	top: 0;
-	width: 100vw;
-	height: 100vh;
-	font-size: 200%;
-	user-select: none;
-	* {
-		position: fixed;
+	margin: 30px auto 0;
+	border: 1px solid #767676;
+	display: grid;
+	grid-template-columns: repeat(50, 8px);
+	grid-template-rows: repeat(30, 8px);
+	>p.live {
+		background-color: #767676;
 	}
-}
-
-#player {
-	transform: translate(-50%, -50%);
 }

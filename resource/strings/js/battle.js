@@ -23,8 +23,10 @@ class Character {
 		this.displays[1].dataset.value = this.status.mp;
 		this.displays[2].dataset.value = this.status.atk;
 		this.displays[3].dataset.value = this.status.tec;
-		this.displays[0].firstElementChild.style.width = `calc(100% * ${this.status.hp} / ${this.start_status.hp})`;
-		this.displays[1].firstElementChild.style.width = `calc(100% * ${this.status.mp} / ${this.start_status.mp})`;
+		if (this.start_status.hp !== 0) this.displays[0].firstElementChild.style.width = `calc(100% * ${this.status.hp} / ${this.start_status.hp})`;
+		else this.displays[0].firstElementChild.style.width = 'calc(100%)';
+		if (this.start_status.mp !== 0) this.displays[1].firstElementChild.style.width = `calc(100% * ${this.status.mp} / ${this.start_status.mp})`;
+		else this.displays[1].firstElementChild.style.width = 'calc(100%)';
 	}
 };
 class Battle {
@@ -57,7 +59,7 @@ class Battle {
 		}
 	}
 	update() {
-		this.elem_range.style.width = `calc(25em * ${this.range} / ${this.escape_range} + 2em)`
+		this.elem_range.style.width = `min(calc(24em * ${this.range} / ${this.escape_range} + 2em), 24em)`
 		this.elem_range.innerText = this.range;
 		this.character[0].update();
 		this.character[1].update();

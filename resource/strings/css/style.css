@@ -77,9 +77,9 @@ input, textarea, select {
 		color: initial;
 	}
 }
-input[type=checkbox] {
+/* input[type=checkbox] {
 	display: none;
-}
+} */
 
 /* 全体-複数個所 */
 .scroll {

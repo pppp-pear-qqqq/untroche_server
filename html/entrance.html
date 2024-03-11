@@ -1,53 +1,55 @@
 <!DOCTYPE html>
-<head>
-	<meta charset="UTF-8">
-	<meta name="viewport" content="width=device-width,initial-scale=1">
-	<title>"Strings"</title>
-	<link rel="preconnect" href="https://fonts.googleapis.com">
-	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-	<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;800&display=swap">
-	<link rel="stylesheet" type="text/css" href="strings/css/style.css">
-	<link rel="stylesheet" type="text/css" href="strings/css/entrance.css">
-	<link rel="stylesheet" type="text/css" href="strings/api/css/alertify.min.css">
-	<script src="strings/api/alertify.min.js"></script>
-	<script src="strings/js/cookie.class.js"></script>
-	<script src="strings/js/ajax.class.js"></script>
-	<script src="strings/js/common.js"></script>
-	<script src="strings/js/entrance.js"></script>
-</head>
-<template id="template_fragment">
-	<label>
-		<select>
-			<option value="none" label="（選択なし）" selected>何も持たないままゲームを開始します。</option>
-			{% for f in fragment %}<option label="{{f.name}}">{{f.lore}}</option>{% endfor %}
-		</select>
-		<p>何も持たないままゲームを開始します。</p>
-	</label>
-</template>
-<body class="back scroll">
-	<div id="blank"></div>
-	<div id="main">
-		<h1>"Strings"</h1>
-		<div><a onclick="toggle_form('login')">ログイン</a><a onclick="toggle_form('register')">新規登録</a></div>
-		<div><a href="./strings/rulebook#summary">ゲーム概要</a><a href="./strings/rulebook#battle">戦闘システム</a><a href="./strings/rulebook#rule">利用規約</a><a href="./strings/characters">キャラクターリスト</a></div>
-	</div>
-	<div id="blank"></div>
-	<div id="form">
-		<div id="login" class="hide">
-			<label>Eno<input type="number" name="eno"></label>
-			<label>パスワード<input type="password" name="password"></label>
-			<label><button type="button" class="submit" onclick="login()">ログイン</button></label>
+<html>
+	<head>
+		<meta charset="UTF-8">
+		<meta name="viewport" content="width=device-width,initial-scale=1">
+		<title>"Strings"</title>
+		<link rel="preconnect" href="https://fonts.googleapis.com">
+		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+		<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;800&display=swap">
+		<link rel="stylesheet" type="text/css" href="strings/css/style.css">
+		<link rel="stylesheet" type="text/css" href="strings/css/entrance.css">
+		<link rel="stylesheet" type="text/css" href="strings/api/css/alertify.min.css">
+		<script src="strings/api/alertify.min.js"></script>
+		<script src="strings/js/cookie.class.js"></script>
+		<script src="strings/js/ajax.class.js"></script>
+		<script src="strings/js/common.js"></script>
+		<script src="strings/js/entrance.js"></script>
+	</head>
+	<template id="template_fragment">
+		<label>
+			<select>
+				<option value="none" label="（選択なし）" selected>何も持たないままゲームを開始します。</option>
+				{% for f in fragment %}<option label="{{f.name}}">{{f.lore}}</option>{% endfor %}
+			</select>
+			<p>何も持たないままゲームを開始します。</p>
+		</label>
+	</template>
+	<body class="back scroll">
+		<div id="blank"></div>
+		<div id="main">
+			<h1>"Strings"</h1>
+			<div><a onclick="toggle_form('login')">ログイン</a><a onclick="toggle_form('register')">新規登録</a></div>
+			<div><a href="./strings/rulebook#summary">ゲーム概要</a><a href="./strings/rulebook#battle">戦闘システム</a><a href="./strings/rulebook#rule">利用規約</a><a href="./strings/characters">キャラクターリスト</a></div>
 		</div>
-		<div id="register" class="hide">
-			<p>パスワード・初期フラグメント以外の項目は後で変更が可能です。</p>
-			<label>パスワード<input type="text" name="password" placeholder="16文字以下"></label>
-			<label>表示名<div><input type="text" id="name" name="name" placeholder="16文字以下"><button type="button" onclick="random_name()">ランダム</button></div></label>
-			<label>短縮名<div><input type="text" id="acronym" name="acronym" placeholder="1文字"><button type="button" onclick="random_acronym()">ランダム</button></div></label>
-			<label>イメージカラー<div><input type="color" id="color" name="color" value="#ffffff"><button type="button" onclick="random_color()">ランダム</button></div></label>
-			<h4>初期フラグメント</h4>
-			<div id="fragments"></div>
-			<label><button type="button" onclick="random_fragment()">ランダムなフラグメントを選択</button></label>
-			<label><button type="button" class="submit" onclick="register()">新規登録</button></label>
+		<div id="blank"></div>
+		<div id="form">
+			<div id="login" class="hide">
+				<label>Eno<input type="number" name="eno"></label>
+				<label>パスワード<input type="password" name="password"></label>
+				<label><button type="button" class="submit" onclick="login()">ログイン</button></label>
+			</div>
+			<div id="register" class="hide">
+				<p>パスワード・初期フラグメント以外の項目は後で変更が可能です。</p>
+				<label>パスワード<input type="text" name="password" placeholder="16文字以下"></label>
+				<label>表示名<div><input type="text" id="name" name="name" placeholder="16文字以下"><button type="button" onclick="random_name()">ランダム</button></div></label>
+				<label>短縮名<div><input type="text" id="acronym" name="acronym" placeholder="1文字"><button type="button" onclick="random_acronym()">ランダム</button></div></label>
+				<label>イメージカラー<div><input type="color" id="color" name="color" value="#ffffff"><button type="button" onclick="random_color()">ランダム</button></div></label>
+				<h4>初期フラグメント</h4>
+				<div id="fragments"></div>
+				<label><button type="button" onclick="random_fragment()">ランダムなフラグメントを選択</button></label>
+				<label><button type="button" class="submit" onclick="register()">新規登録</button></label>
+			</div>
 		</div>
-	</div>
-</body>
+	</body>
+</html>
