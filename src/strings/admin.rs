@@ -37,10 +37,59 @@ fn sql_execute(conn: &Connection, sql: &str) -> bool {
     }
 }
 
+#[derive(Serialize)]
+struct NpcWord {
+    start: Option<String>,
+    win: Option<String>,
+    lose: Option<String>,
+    draw: Option<String>,
+    escape: Option<String>,
+}
+#[allow(dead_code)]
+impl NpcWord {
+    fn new(start: Option<&str>, win: Option<&str>, lose: Option<&str>, draw: Option<&str>, escape: Option<&str>) -> NpcWord {
+        NpcWord {
+            start: start.map(|x| x.to_string()),
+            win: win.map(|x| x.to_string()),
+            lose: lose.map(|x| x.to_string()),
+            draw: draw.map(|x| x.to_string()),
+            escape: escape.map(|x| x.to_string()),
+        }
+    }
+}
+
 // サーバー起動時に実行する関数
 #[allow(dead_code)]
 pub fn preset() -> Result<(), rusqlite::Error> {
     // let conn = Connection::open(common::DATABASE)?;
+    // sql_execute(&conn, "CREATE TABLE npc(id INTEGER NOT NULL PRIMARY KEY,name TEXT NOT NULL,acronym TEXT NOT NULL,color BLOB NOT NULL,word TEXT NOT NULL,status BLOB NOT NULL)");
+    // sql_execute(&conn, "CREATE TABLE npc_skill(id INTEGER NOT NULL,slot INTEGER NOT NULL,skill INTEGER NOT NULL,name TEXT,word TEXT,PRIMARY KEY(id,slot))");
+    // sql_execute(&conn, "CREATE TABLE reward(id INTEGER NOT NULL PRIMARY KEY,npc INTEGER NOT NULL,weight INTEGER NOT NULL,category TEXT NOT NULL,name TEXT NOT NULL,lore TEXT NOT NULL,status BLOB NOT NULL,skill INTEGER)");
+    // sql_execute(&conn, "DELETE FROM npc");
+    // if let Err(err) = conn.execute("INSERT INTO npc(name,acronym,color,word,status) VALUES(?1,?2,?3,?4,?5)", params![
+    //     "盗賊女",
+    //     "賊",
+    //     [176u8, 54u8, 78u8],
+    //     serde_json::to_string(&NpcWord::new(
+    //         Some("「さっさとくたばってね」"),
+    //         Some("「はっ。あたしの勝ちだ」"),
+    //         Some("「……ぐっ、くそッ！」"),
+    //         Some("「……今日は、この辺にしといてやる」"),
+    //         Some("「ち。逃がしたか」"),
+    //     )).unwrap(),
+    //     [0u8, 29, 0, 9, 0, 18, 0, 11],
+    // ]) { println!("{}", err) }
+    // sql_execute(&conn, "DELETE FROM npc_skill");
+    // if let Err(err) = conn.execute("INSERT INTO npc_skill VALUES(1,1,?1,?2,?3),(1,2,?4,?5,?6),(1,3,?7,?8,?9),(1,4,?10,?11,?12),(1,5,?13,?14,?15)", params![
+    //     4, Option::<&str>::None, Some("引掻き傷。"),
+    //     24, Option::<&str>::None, Some("「逃がさないよ」"),
+    //     16, Option::<&str>::None, Option::<&str>::None,
+    //     80, Option::<&str>::None, Some("「──チッ」"),
+    //     23, Option::<&str>::None, Some("「もっと近くに来なよ、爪が届かない」"),
+    // ]) { println!("{}", err) }
+    // if let Err(err) = conn.execute("INSERT INTO reward(npc,weight,category,name,lore,status,skill) VALUES(?1,?2,?3,?4,?5,?6,?7)", params![1, 1,
+    //     "クラック", "テストフラグメント", "戦闘報酬のテスト", [0u8, 0, 0, 0, 0, 0, 0, 0], Option::<i32>::None,
+    // ]) { println!("{}", err) }
     // sql_execute(&conn, "DELETE FROM user");
     // sql_execute(&conn, "DELETE FROM character");
     // sql_execute(&conn, "DELETE FROM character_profile");
@@ -89,13 +138,6 @@ pub fn preset() -> Result<(), rusqlite::Error> {
     Ok(())
 }
 
-#[derive(Serialize)]
-struct Character {
-    eno: i16,
-    name: String,
-    location: String,
-    kins: i32,
-}
 #[derive(Deserialize)]
 pub(super) struct Password {
     pass: String,
@@ -149,6 +191,37 @@ pub(super) async fn execute_sql(req: HttpRequest, info: web::Json<Sql>) -> Resul
 }
 
 // プレイヤー
+#[derive(Serialize)]
+pub(super) struct Character {
+    eno: i16,
+    name: String,
+    location: String,
+    kins: i32,
+}
+pub(super) async fn get_characters(req: HttpRequest) -> Result<web::Json<Vec<Character>>, actix_web::Error> {
+    // パスワード取得
+    let password =  req.cookie("admin_password")
+        .ok_or(ErrorForbidden("パスワードが無効です"))?;
+    // データベースに接続
+	let conn = common::open_database()?;
+    // パスワード確認
+    check_server_password(&conn, password.value())?;
+    // 処理開始
+    let mut stmt = conn.prepare("SELECT eno,name,location,kins FROM character")
+        .map_err(|err| ErrorInternalServerError(err))?;
+    let result = stmt.query_map([], |row| {
+        Ok(Character{
+            eno: row.get(0)?,
+            name: row.get(1)?,
+            location: row.get(2)?,
+            kins: row.get(3)?,
+        })
+    })
+        .map_err(|err| ErrorInternalServerError(err))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|err| ErrorInternalServerError(err))?;
+    Ok(web::Json(result))
+}
 #[derive(Deserialize)]
 pub(super) struct CharacterData {
     eno: i16,

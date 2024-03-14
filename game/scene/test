@@ -1,6 +1,5 @@
-!if lost_name{
-	$input-nullable
-	!yield name
-	!fragment 名前 name
-}
-名前があっても見られるテキスト
+戦闘を開始します
+!battle 1
+戦闘終了
+$(次へ,next)
+!yield select

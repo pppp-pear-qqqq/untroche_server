@@ -86,7 +86,8 @@
 .talk {
 	grid-template-columns: max-content 1fr min-content;
 	>.to {
-		grid-column: 1 / 3;
+		grid-column: 1 / -1;
+		cursor: pointer;
 	}
 	>.acronym {
 		grid-column-start: 1;
@@ -119,6 +120,9 @@
 	>.footer {
 		gap: 8px;
 	}
+}
+.talk.close>*:not(.to) {
+	display: none;
 }
 
 #location {
@@ -226,10 +230,14 @@
 	>.talk {
 		margin: 0 8px;
 		padding: 8px 4px 8px 8px;
-		>.to>input[type="number"] {
-			margin-left: 4px;
-			padding-left: 4px;
-			width: 6em;
+		>.to {
+			grid-column: 1 / 3;
+			cursor: unset;
+			>input[type="number"] {
+				margin-left: 4px;
+				padding-left: 4px;
+				width: 6em;
+			}
 		}
 		input[type="checkbox"] {
 			display: none;
@@ -347,6 +355,10 @@
 			display: block;
 			content: url('../pic/box_3_line.svg');
 		}
+		>.fragment.base_material>img {
+			display: block;
+			content: url('../pic/box_3_fill.svg');
+		}
 	}
 	>.create {
 		height: 0;
@@ -355,64 +367,35 @@
 		>div {
 			margin: auto;
 			flex-direction: column;
-			label>* {
-				margin-left: 6px;
-			}
-			div {
-				justify-content: space-between;
-				>input {
-					border-style: dashed none none none;
+			gap: 6px;
+			>.text {
+				display: grid;
+				grid-template-columns: 1fr max-content;
+				gap: 6px;
+				>* {
+					border-style: dashed none;
+				}
+				>[name="category"] {
+					width: 8em;
+				}
+				>textarea {
+					grid-column: 1 / -1;
+					width: 30em;
+					height: 4lh;
+					resize: none;
+					overflow: auto;
 				}
 			}
-			input[name="name"] {
-				width: 16em;
-			}
-			input[name="category"] {
-				width: 8em;
-			}
-			textarea {
-				display: block;
-				width: 30em;
-				height: 4lh;
-				border-style: dashed none;
-				resize: none;
-				overflow: hidden;
-			}
-			.status {
-				display: flex;
-				justify-content: space-between;
-				div {
-					width: 50px;
-					justify-content: space-between;
-				}
-				div::after {
+			>.status {
+				gap: 4px;
+				p::after {
 					content: attr(data-value);
 				}
-				input {
-					position: relative;
-					width: 21em;
-					margin: 1px 2em;
-					background: #404040;
-				}
-				input::before {
-					content: attr(min);
-					position: absolute;
-					left: -4px;
-					transform: translate(-100%);
-				}
-				input::after {
-					content: attr(max);
-					position: absolute;
-					right: -4px;
-					transform: translate(100%);
+				.skill {
+					margin-left: auto;
 				}
 			}
-			.skill {
-				select {
-					width: 16em;
-				}
-			}
-			.cost::before {
+			>.cost::before {
 				content: '消費キンス = ' attr(data-cost);
 			}
 		}
@@ -428,7 +411,7 @@
 		transform: rotate(0.5turn);
 		+.create {
 			border-top: 1px dashed #767676;
-			height: 12lh;
+			height: 8lh;
 		}
 	}
 	>.header, >.footer {
@@ -800,8 +783,15 @@
 						margin: 0 6px;
 					}
 				}
+				.tip {
+					display: none;
+				}
+				*:hover .tip {
+					display: unset;
+					font-size: 0.8rem;
+				}
 				>.skill {
-					font-size: 1.3em;
+					font-size: 1.3rem;
 					margin: 4px 1em;
 				}
 				>.skill::before {

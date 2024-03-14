@@ -1,5 +1,6 @@
 use std::{collections::HashMap, num::ParseIntError, ops};
 
+use rand::distributions::{Distribution, WeightedIndex};
 use rusqlite::{params, types::Type, Connection};
 use serde::{Deserialize, Serialize};
 
@@ -307,14 +308,15 @@ impl Serialize for Timing {
 
 #[derive(Clone)]
 struct Skill {
-    name: String,
+    default_name: String,
+    name: Option<String>,
     word: Option<String>,
     timing: Timing,
     formula: Vec<Command>,
 }
 impl Skill {
-    fn new(name: String, word: Option<String>, timing: Timing, formula: Vec<Command>) -> Skill {
-        Skill { name, word, timing, formula }
+    fn new(default_name: String, name: Option<String>, word: Option<String>, timing: Timing, formula: Vec<Command>) -> Skill {
+        Skill { default_name, name, word, timing, formula }
     }
 }
 
@@ -388,7 +390,15 @@ enum BattleResult {
     Draw,
     Escape,
 }
-
+impl BattleResult {
+    fn as_str(&self) -> &str {
+        match self {
+            BattleResult::Win(i) => get_side(&i),
+            BattleResult::Draw => "draw",
+            BattleResult::Escape => "escape",
+        }
+    }
+}
 #[derive(Serialize)]
 struct LogCharacter {
     eno: i16,
@@ -418,36 +428,44 @@ impl LogCharacter {
 struct LogTurn {
     owner: String,
     content: Option<String>,
-    skill: Option<String>,
+    skill: Option<(String, Option<String>)>,
     action: Option<String>,
 }
 impl LogTurn {
-    fn make_string(owner: &str, content: Option<String>, skill: Option<String>, action: Option<String>) -> LogTurn {
+    fn make_string(owner: &str, content: &Option<String>, skill: &Option<String>, skill_default: Option<&String>, action: Option<&String>) -> LogTurn {
+        let s0 = skill.to_owned().or(skill_default.cloned());
+        let s1 = if skill != &None {
+            skill_default
+        } else { None };
         LogTurn {
             owner: owner.to_string(),
-            content: content.map(|x| x.to_string()),
-            skill: skill.map(|x| x.to_string()),
-            action: action.map(|x| x.to_string()),
+            content: content.to_owned(),
+            skill: s0.map(|x| (x, s1.map(|x| x.to_owned()))),
+            action: action.cloned(),
         }
     }
-    fn make(owner: &str, content: Option<&str>, skill: Option<&str>, action: Option<&str>) -> LogTurn {
+    fn make(owner: &str, content: Option<&str>, skill: Option<&str>, skill_default: Option<&str>, action: Option<&str>) -> LogTurn {
+        let s0 = skill.or(skill_default);
+        let s1 = if skill != None {
+            skill_default
+        } else { None };
         LogTurn {
             owner: owner.to_string(),
             content: content.map(|x| x.to_string()),
-            skill: skill.map(|x| x.to_string()),
+            skill: s0.map(|x| (x.to_string(), s1.map(|x| x.to_string()))),
             action: action.map(|x| x.to_string()),
         }
     }
 }
 #[derive(Serialize)]
-pub struct Log {
+struct Log {
     rule: String,
     version: f32,
     left: LogCharacter,
     right: LogCharacter,
     range: i16,
     escape_range: i16,
-    pub result: String,
+    result: String,
     turn: Vec<LogTurn>,
 }
 struct Battle {
@@ -467,7 +485,6 @@ impl Battle {
             log: Log { rule: SYSTEM.to_string(), version: 0.2, left: LogCharacter::new(ch0), right: LogCharacter::new(ch1), range, escape_range, result: String::new(), turn: vec![] },
         }
     }
-
     fn load(eno: [i16; 2]) -> Result<Battle, rusqlite::Error> {
         let conn = Connection::open(common::DATABASE)?;
         // 基幹データ取得
@@ -491,7 +508,8 @@ impl Battle {
                 let result = stmt.query_map(params![eno], |row| {
                     let skill = if let Some(name) = row.get(1)? {
                         Some(Skill::new(
-                            row.get::<_, Option<_>>(2)?.unwrap_or(name),
+                            name,
+                            row.get(2)?,
                             row.get(3)?,
                             Timing::from(row.get::<_, Option<i8>>(4)?.ok_or(rusqlite::Error::InvalidColumnType(4, "skill.type".to_string(), rusqlite::types::Type::Text))?),
                             Command::convert(
@@ -517,7 +535,7 @@ impl Battle {
                 character
             } else {
                 // NPC
-                let mut character = conn.query_row("SELECT name,acronym,color,word,status WHERE id=?1", params![-eno], |row| {
+                let mut character = conn.query_row("SELECT name,acronym,color,word,status FROM npc WHERE id=?1", params![-eno], |row| {
                     Ok(Character {
                         eno,
                         name: row.get(0)?,
@@ -531,11 +549,12 @@ impl Battle {
                 // なんでこれLEFT OUTER JOINなの？ INNER JOINでよくない？
                 // ああ　あっちはフラグメントだったから、スキルが付いてないやつを取得することもあったのか
                 // これは純粋にスキルに対する追加情報だからINNER JOINの方が良い
-                let mut stmt = conn.prepare("SELECT n.name,s.name,n.word,s.type,s.effect FROM npc_skill n INNER JOIN skill s ON n.id=?1 AND n.skill=s.id ORDER BY n.slot ASC")?;
+                let mut stmt = conn.prepare("SELECT s.name,n.name,n.word,s.type,s.effect FROM npc_skill n INNER JOIN skill s ON n.id=?1 AND n.skill=s.id ORDER BY n.slot ASC")?;
                 character.skill = stmt.query_map(params![-eno], |row| {
                     Ok((
                         Skill::new(
-                            row.get::<_, Option<_>>(0)?.unwrap_or(row.get(1)?),
+                            row.get(0)?,
+                            row.get(1)?,
                             row.get(2)?,
                             Timing::from(row.get::<_, i8>(3)?),
                             Command::convert(row.get(4)?).map_err(|_| rusqlite::Error::InvalidColumnType(4, "skill.effect".to_string(), rusqlite::types::Type::Text))?,
@@ -702,17 +721,21 @@ impl Battle {
         }
         // ログを生成
         if skill_id != None || !action.is_empty() {
-            let (content, skill) = if let Some(id) = skill_id {
+            let defaut_name = String::new();
+            let (content, skill, default_name) = if let Some(id) = skill_id {
                 (
-                    self.character[user].skill[id].0.word.to_owned(),
-                    Some(self.character[user].skill[id].0.name.to_owned())
+                    &self.character[user].skill[id].0.word,
+                    &self.character[user].skill[id].0.name,
+                    &self.character[user].skill[id].0.default_name,
                 )
-            } else { (None, None) };
+            } else { (&None, &None, &defaut_name) };
+            let action = action.join(",");
             self.log.turn.push(LogTurn::make_string(
                 get_side(&user),
                 content,
                 skill,
-                if action.is_empty() { None } else { Some(action.join(",")) },
+                Some(default_name),
+                if action.is_empty() { None } else { Some(&action) },
             ))
         }
         // 発動したスキルに攻撃が含まれていたら
@@ -723,43 +746,176 @@ impl Battle {
             Ok(skill_id.is_some())
         }
     }
-}
-
-fn check_battle_result(battle: &mut Battle) -> Result<Option<BattleResult>, String> {
-    static CHECK: &str = "<hr>";
-    // 戦闘終了判定
-    let death_left = battle.character[0].status.hp <= 0;
-    let death_right = battle.character[1].status.hp <= 0;
-    if death_left && death_right {
-        // どちらもHP0以下なら引き分け
-        battle.log.turn.push(LogTurn::make(SYSTEM, Some(CHECK), None, None));
-        Ok(Some(BattleResult::Draw))
-    } else if death_left || death_right {
-        // どちらかがHP0以下なら勝利判定
-        battle.log.turn.push(LogTurn::make(SYSTEM, Some(CHECK), None, None));
-        // スキル発動フラグ
-        let mut is_action = false;
-        // 勝者側のインデックスを作成
-        let winer = death_left as usize;
-        // 敗北側から先にスキル発動
-        is_action |= battle.skill_execute(winer ^ 1, Timing::Lose)?;
-        is_action |= battle.skill_execute(winer, Timing::Win)?;
-        if is_action {
-            // どちらかが行動していれば判定をやり直す
-            check_battle_result(battle)
+    fn check_battle_result(&mut self) -> Result<Option<BattleResult>, String> {
+        static CHECK: &str = "<hr>";
+        // 戦闘終了判定
+        let death_left = self.character[0].status.hp <= 0;
+        let death_right = self.character[1].status.hp <= 0;
+        if death_left && death_right {
+            // どちらもHP0以下なら引き分け
+            self.log.turn.push(LogTurn::make(SYSTEM, Some(CHECK), None, None, None));
+            Ok(Some(BattleResult::Draw))
+        } else if death_left || death_right {
+            // どちらかがHP0以下なら勝利判定
+            self.log.turn.push(LogTurn::make(SYSTEM, Some(CHECK), None, None, None));
+            // スキル発動フラグ
+            let mut is_action = false;
+            // 勝者側のインデックスを作成
+            let winer = death_left as usize;
+            // 敗北側から先にスキル発動
+            is_action |= self.skill_execute(winer ^ 1, Timing::Lose)?;
+            is_action |= self.skill_execute(winer, Timing::Win)?;
+            if is_action {
+                // どちらかが行動していれば判定をやり直す
+                self.check_battle_result()
+            } else {
+                // どちらとも行動していなければ終了
+                Ok(Some(BattleResult::Win(winer)))
+            }
+        } else if self.range >= self.escape_range {
+            // 間合が規定を超えていれば逃走
+            self.log.turn.push(LogTurn::make(SYSTEM, Some(CHECK), None, None, None));
+            Ok(Some(BattleResult::Escape))
         } else {
-            // どちらとも行動していなければ終了
-            Ok(Some(BattleResult::Win(winer)))
+            Ok(None)
         }
-    } else if battle.range >= battle.escape_range {
-        // 間合が規定を超えていれば逃走
-        battle.log.turn.push(LogTurn::make(SYSTEM, Some(CHECK), None, None));
-        Ok(Some(BattleResult::Escape))
-    } else {
-        Ok(None)
+    }
+    fn talk(&mut self, i: usize, key: &str) {
+        if let Some(word) = self.character[i].word.get(key) {
+            if word != "" {
+                self.log.turn.push(LogTurn::make(get_side(&i), Some(word), None, None, None))
+            }
+        }
+    }
+    fn reward(&mut self) -> Result<(), String> {
+        match self.result {
+            Some(BattleResult::Win(i)) => {
+                let conn = Connection::open(common::DATABASE).map_err(|err| err.to_string())?;
+                // フラグメント移動
+                if let Some(fragment) = take_fragment(&conn, self.character[i].eno, self.character[i ^ 1].eno).map_err(|err| err.to_string())? {
+                    self.log.turn.push(LogTurn::make_string(SYSTEM, &Some(format!("フラグメント『{}』が奪われました", fragment)), &None, None, None));
+                } else {
+                    self.log.turn.push(LogTurn::make_string(SYSTEM, &Some(format!("{}の所持数限界のため報酬を省略", self.character[i].name)), &None, None, None));
+                }
+                Ok(())
+            }
+            Some(_) => {
+                Ok(())
+            }
+            None => {
+                Err("結果が出ていない状態で報酬処理を行おうとしました".to_string())
+            }
+        }
+    }
+    fn save_log(&self) -> Result<i64, String> {
+        if let Some(result) = &self.result {
+            let conn = Connection::open(common::DATABASE).map_err(|err| err.to_string())?;
+            let result = result.as_str();
+            let log = serde_json::to_string(&self.log).map_err(|err| err.to_string())?;
+            // データベースに保存
+            conn.execute(
+                "INSERT INTO battle(left_eno,right_eno,result,log) VALUES(?1,?2,?3,?4)",
+                params![
+                    self.character[0].eno,
+                    self.character[1].eno,
+                    result,
+                    log,
+                ]
+            ).map_err(|err| err.to_string())?;
+            Ok(conn.last_insert_rowid())
+        } else {
+            Err("結果が出ていない状態でログを保存しようとしました".to_string())
+        }
     }
 }
 
+pub fn take_fragment(conn: &Connection, win: i16, lose: i16) -> Result<Option<String>, rusqlite::Error> {
+    // 勝利者がプレイヤー
+    if win > 0 {
+        // 勝利者のスロットに空きがある場合
+        if let Some(slot) = common::get_empty_slot(&conn, win)? {
+            if lose > 0 {
+                // 敗北者がプレイヤー
+                let mut stmt = conn.prepare("SELECT slot,category,name FROM fragment WHERE eno=?1 AND slot<=20")?;
+                // 候補の取得
+                let result: Vec<(i8, String, String)> = stmt.query_map(params![lose], |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                    ))
+                })?.collect::<Result<_, _>>()?;
+                // 移動対象を決定
+                let buf = &result[rand::random::<usize>() % result.len()];
+                let t = {
+                    if buf.1 == "名前" {
+                        if let Some(doll) = result.iter().find(|&x| x.1 == "身代わり") {
+                            doll
+                        } else {
+                            buf
+                        }
+                    } else { buf }
+                };
+                // フラグメントの移動
+                conn.execute("UPDATE fragment SET eno=?1,slot=?2 WHERE eno=?3 AND slot=?4", params![win, slot, lose, t.0])?;
+                Ok(Some(t.2.to_owned()))
+            } else {
+                // 敗北者がNPC
+                let mut stmt = conn.prepare("SELECT weight,category,name,lore,status,skill FROM reward WHERE npc=?1")?;
+                // 候補の取得
+                let result: Vec<(i32, String, String, String, [u8; 8], Option<i32>)> = stmt.query_map(params![lose * -1], |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get(5)?,
+                    ))
+                })?.collect::<Result<_, _>>()?;
+                if !result.is_empty() {
+                    let weight = WeightedIndex::new(result.iter().map(|x| x.0).collect::<Vec<_>>()).unwrap();
+                    // 移動対象を決定
+                    let t = &result[weight.sample(&mut rand::thread_rng())];
+                    // 獲得
+                    conn.execute("INSERT INTO fragment(eno,slot,category,name,lore,status,skill) VALUES(?1,?2,?3,?4,?5,?6,?7)", params![
+                        win, slot, t.1, t.2, t.3, t.4, t.5,
+                    ])?;
+                    Ok(Some(t.2.to_owned()))
+                } else {
+                    Ok(None)
+                }
+            }
+        } else {
+            Ok(None)
+        }
+    } else {
+        // 勝利者がNPC
+        let mut stmt = conn.prepare("SELECT slot,category,name FROM fragment WHERE eno=?1 AND slot<=20")?;
+        // 候補の取得
+        let result: Vec<(i8, String, String)> = stmt.query_map(params![lose], |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+            ))
+        })?.collect::<Result<_, _>>()?;
+        // 移動対象を決定
+        let buf = &result[rand::random::<usize>() % result.len()];
+        let t = {
+            if buf.1 == "名前" {
+                if let Some(doll) = result.iter().find(|&x| x.1 == "身代わり") {
+                    doll
+                } else {
+                    buf
+                }
+            } else { buf }
+        };
+        // フラグメントの削除
+        conn.execute("DELETE FROM fragment WHERE eno=?1 AND slot=?2", params![lose, t.0])?;
+        Ok(Some(t.2.to_owned()))
+    }
+}
 fn get_side(i: &usize) -> &str {
     match i {
         0 => "left",
@@ -768,15 +924,7 @@ fn get_side(i: &usize) -> &str {
     }
 }
 
-fn talk(battle: &mut Battle, i: usize, key: &str) {
-    if let Some(word) = battle.character[i].word.get(key) {
-        if word != "" {
-            battle.log.turn.push(LogTurn::make(get_side(&i), Some(word), None, None))
-        }
-    }
-}
-
-pub fn battle(eno: [i16; 2]) -> Result<Log, String> {
+pub fn battle(eno: [i16; 2]) -> Result<String, String> {
     // 読み込み・初期化
     let mut battle = Battle::load(eno).map_err(|err|err.to_string())?;
     // 処理開始
@@ -784,62 +932,66 @@ pub fn battle(eno: [i16; 2]) -> Result<Log, String> {
     for i in 0..battle.character.len() {
         battle.skill_execute(i, Timing::Start)?;
         // 戦闘終了判定
-        battle.result = check_battle_result(&mut battle)?;
+        battle.result = battle.check_battle_result()?;
     }
     // 戦闘開始時台詞
     for i in 0..battle.character.len() {
-        talk(&mut battle, i, "start");
+        battle.talk(i, "start");
     }
     // 戦闘開始ログ
-    battle.log.turn.push(LogTurn::make(SYSTEM, Some("<hr>戦闘開始"), None, None));
+    battle.log.turn.push(LogTurn::make(SYSTEM, Some("<hr>戦闘開始"), None, None, None));
     // ターン処理
     // もしこの時点で戦闘が終了していればスキップ
     let mut turn = 0;
     while battle.result == None && turn <= 30 {
         turn += 1;
-        battle.log.turn.push(LogTurn::make(SYSTEM, Some(&format!("<hr>ターン {}", turn)), None, None));
+        battle.log.turn.push(LogTurn::make(SYSTEM, Some(&format!("<hr>ターン {}", turn)), None, None, None));
         for i in 0..battle.character.len() {
             battle.skill_execute(i, Timing::Active)?;
             // 戦闘終了判定
-            battle.result = check_battle_result(&mut battle)?;
+            battle.result = battle.check_battle_result()?;
             if battle.result != None {
                 break;
             }
         }
     }
     // 戦闘終了時台詞
-    battle.log.turn.push(LogTurn::make(SYSTEM, Some("戦闘終了"), None, None));
+    battle.log.turn.push(LogTurn::make(SYSTEM, Some("戦闘終了"), None, None, None));
     match battle.result {
         Some(BattleResult::Win(winer)) => {
             // 勝った方の台詞を先に
-            talk(&mut battle, winer, "win");
-            talk(&mut battle, winer ^ 1, "lose");
+            battle.talk(winer, "win");
+            battle.talk(winer ^ 1, "lose");
             battle.log.result = get_side(&winer).to_string();
-            battle.log.turn.push(LogTurn::make(get_side(&winer), Some(&format!("{} の勝利", battle.character[winer].name)), None, None));
+            battle.log.turn.push(LogTurn::make((battle.log.result.to_owned() + "-").as_str(), Some(&format!("{} の勝利", battle.character[winer].name)), None, None, None));
         },
         Some(BattleResult::Draw) => {
             for i in 0..battle.character.len() {
-                talk(&mut battle, i, "draw");
+                battle.talk(i, "draw");
             }
             battle.log.result = "draw".to_string();
-            battle.log.turn.push(LogTurn::make(SYSTEM, Some("引き分け"), None, None));
+            battle.log.turn.push(LogTurn::make(SYSTEM, Some("引き分け"), None, None, None));
         },
         Some(BattleResult::Escape) => {
             for i in 0..battle.character.len() {
-                talk(&mut battle, i, "escape");
+                battle.talk(i, "escape");
             }
             battle.log.result = "escape".to_string();
-            battle.log.turn.push(LogTurn::make(SYSTEM, Some("逃走"), None, None));
+            battle.log.turn.push(LogTurn::make(SYSTEM, Some("逃走"), None, None, None));
         },
         None => {
             battle.result = Some(BattleResult::Draw);
             for i in 0..battle.character.len() {
-                talk(&mut battle, i, "timeover");
+                battle.talk(i, "timeover");
             }
             battle.log.result = "draw".to_string();
-            battle.log.turn.push(LogTurn::make(SYSTEM, Some("引き分け……時間切れ"), None, None));
+            battle.log.turn.push(LogTurn::make(SYSTEM, Some("引き分け……時間切れ"), None, None, None));
         },
     }
+    // 戦利品処理
+    battle.reward()?;
+    // ログ保存
+    battle.save_log()?;
     // 処理終了
-    Ok(battle.log)
+    Ok(serde_json::to_string(&battle.log).map_err(|err| err.to_string())?)
 }

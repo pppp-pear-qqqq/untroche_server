@@ -14,6 +14,8 @@ use rand::{distributions::{Distribution, WeightedIndex}, seq::SliceRandom};
 use rusqlite::{params, Connection};
 use serde::Deserialize;
 
+use crate::strings::battle;
+
 use super::common;
 
 struct Scene {
@@ -172,7 +174,7 @@ fn process_scene(text: &str, conn: &Connection, eno: i16, data: &mut HashMap<Str
                         data.remove(&var.to_string());
                     }
                     // 次
-                    process_scene(if text.is_empty() {""} else {&text[1..]}, conn, eno, data)
+                    process_scene(text.trim_start(), conn, eno, data)
                 }
                 "location" => {
                     // オプションと以降の文字列を取得
@@ -199,7 +201,7 @@ fn process_scene(text: &str, conn: &Connection, eno: i16, data: &mut HashMap<Str
                         // 次
                         Ok(format!("──{}に移動しました", location) + &process_scene(text, conn, eno, data)?)
                     } else {
-                        process_scene(if text.is_empty() {""} else {&text[1..]}, conn, eno, data)
+                        process_scene(text.trim_start(), conn, eno, data)
                     }
                 }
                 "kins" => {
@@ -312,20 +314,19 @@ fn process_scene(text: &str, conn: &Connection, eno: i16, data: &mut HashMap<Str
                     // 次
                     Ok(format!("──フラグメント『{}』を入手しました{}", fragment.name, if get {"<br>──所持数制限により破棄されました"} else {""}) + &process_scene(text, conn, eno, data)?)
                 }
-                // "battle" => {
-                //     // !battle (id)
-                //     // id以外に指定しなきゃいけないことある？　多分ない……
-                //     // 指定されたIDのnpcと戦闘を行う
-                //     // オプションと以降の文字列を取得
-                //     let (id, text) = part_option(text.trim_start());
-                //     // idを取得
-                //     let id = id.parse::<u8>().map_err(|_| ScriptError::parse_error(id, "u8"))?;
-                //     // 戦闘処理
-                //     let log = battle::battle([eno, id as i16 * -1]).map_err(|err| ScriptError::CodeError(err))?;
-                    
-                //     let log_text = serde_json::to_string(&log).map_err(|err| ScriptError::CodeError(err.to_string()))?;
-                //     todo!()
-                // }
+                "battle" => {
+                    // !battle (id)
+                    // id以外に指定しなきゃいけないことある？　多分ない……
+                    // 指定されたIDのnpcと戦闘を行う
+                    // オプションと以降の文字列を取得
+                    let (id, text) = part_option(text.trim_start());
+                    // idを取得
+                    let id = id.parse::<i16>().map_err(|_| ScriptError::parse_error(id, "i16"))?;
+                    // 戦闘処理
+                    let log = battle::battle([eno, id * -1]).map_err(|err| ScriptError::CodeError(err))?;
+                    // 次
+                    Ok(format!("──戦闘を開始しました\n{}\n", log) + &process_scene(text, conn, eno, data)?)
+                }
                 "match" => {
                     let (var, mut nest, text) = get_nest(text.trim_start())?;
                     if let Some(nest) = if var == "%" {
@@ -363,7 +364,7 @@ fn process_scene(text: &str, conn: &Connection, eno: i16, data: &mut HashMap<Str
                         process_scene(&(nest.to_string() + text), conn, eno, data)
                     } else {
                         // 該当するネストが無ければ行を潰す
-                        process_scene(if text.is_empty() {""} else {&text[1..]}, conn, eno, data)
+                        process_scene(text.trim_start(), conn, eno, data)
                     }
                 }
                 "if" => {
@@ -400,7 +401,7 @@ fn process_scene(text: &str, conn: &Connection, eno: i16, data: &mut HashMap<Str
                         process_scene(&(nest.to_string() + text), conn, eno, data)
                     } else {
                         // 該当するネストが無ければ行を潰す
-                        process_scene(if text.is_empty() {""} else {&text[1..]}, conn, eno, data)
+                        process_scene(text.trim_start(), conn, eno, data)
                     }
                 }
                 "return" => {
@@ -417,7 +418,7 @@ fn process_scene(text: &str, conn: &Connection, eno: i16, data: &mut HashMap<Str
                     };
                     // シーンを保存
                     conn.execute("UPDATE scene SET buffer=?1,data=?2,data_key=?3 WHERE eno=?4", params![
-                        if text.is_empty() {""} else {&text[1..]},
+                        text.trim_start(),
                         serde_json::to_string(&data).map_err(|_| ScriptError::parse_error("data", "String"))?,
                         var,
                         eno,

@@ -1,8 +1,8 @@
-use std::{cmp, collections::hash_map::DefaultHasher, hash::{Hash, Hasher}, i128, ops};
+use std::{collections::hash_map::DefaultHasher, hash::{Hash, Hasher}, i128};
 
 use actix_rt;
 use actix_web::{error::{ErrorBadRequest, ErrorInternalServerError, ErrorServiceUnavailable}, web::{self, Json}, HttpRequest};
-use rusqlite::{named_params, params, types::Type, Connection};
+use rusqlite::{named_params, params, types::Type};
 use serde::{Deserialize, Serialize};
 use unicode_segmentation::UnicodeSegmentation;
 use uuid::Uuid;
@@ -763,23 +763,9 @@ pub(super) struct CreateFragmentData {
     category: String,
     name: String,
     lore: String,
-    hp: i16,
-    mp: i16,
-    atk: i16,
-    tec: i16,
-    skill: Option<i32>,
     force: Option<bool>,
 }
-struct CreateFragmentPredicate {
-    has_category: bool,
-    hp: ops::Range<i16>,
-    mp: ops::Range<i16>,
-    atk: ops::Range<i16>,
-    tec: ops::Range<i16>,
-    has_skill: bool,
-}
 pub(super) async fn create_fragment(req: HttpRequest, info: web::Json<CreateFragmentData>) -> Result<Json<i32>, actix_web::Error> {
-    return Err(ErrorBadRequest("現在フラグメント合成機能は凍結中です。<br>もうしばらくお待ちください。"));
     if info.force != Some(true) {
         // カテゴリ制限
         match info.category.as_str() {
@@ -789,25 +775,20 @@ pub(super) async fn create_fragment(req: HttpRequest, info: web::Json<CreateFrag
             "身代わり" => return Err(ErrorBadRequest(format!("{}カテゴリのフラグメントを作成することはできません", info.category))),
             _ => (),
         }
-        // 文字数制限
-        if !(1..=8).contains(&info.category.grapheme_indices(true).count()) {
-            return Err(ErrorBadRequest("カテゴリは1文字以上8文字以下に設定してください"));
-        }
-        if !(1..=16).contains(&info.name.grapheme_indices(true).count()) {
-            return Err(ErrorBadRequest("フラグメント名は1文字以上16文字以下に設定してください"));
-        }
-        if info.lore.grapheme_indices(true).count() > 200 {
-            return Err(ErrorBadRequest("説明文は200文字以内に設定してください"));
-        }
-        // マテリアル個数制限
-        if info.material.len() < 2 {
-            return Err(ErrorBadRequest("二つ以上のフラグメントを素材にする必要があります"));
-        }
-    } else {
-        // マテリアル個数制限
-        if info.material.len() == 0 {
-            return Err(ErrorBadRequest("一つ以上のフラグメントを素材にする必要があります"));
-        }
+    }
+    // マテリアル個数制限
+    if info.material.len() == 0 {
+        return Err(ErrorBadRequest("一つ以上のフラグメントを素材にする必要があります"));
+    }
+    // 文字数制限
+    if !(1..=8).contains(&info.category.grapheme_indices(true).count()) {
+        return Err(ErrorBadRequest("カテゴリは1文字以上8文字以下に設定してください"));
+    }
+    if !(1..=16).contains(&info.name.grapheme_indices(true).count()) {
+        return Err(ErrorBadRequest("フラグメント名は1文字以上16文字以下に設定してください"));
+    }
+    if info.lore.grapheme_indices(true).count() > 200 {
+        return Err(ErrorBadRequest("説明文は200文字以内に設定してください"));
     }
     // ログインセッションを取得
     let session =  req.cookie("login_session")
@@ -829,88 +810,39 @@ pub(super) async fn create_fragment(req: HttpRequest, info: web::Json<CreateFrag
         .map_err(|err| ErrorInternalServerError(err))?;
     // フラグメントの一覧を取得
     let result = || -> Result<_, rusqlite::Error> {
-        let mut stmt = conn.prepare("SELECT slot,category,name,lore,status,skill,user FROM fragment WHERE eno=?1")?;
-        let result = stmt.query_map(params![eno], |row| {
-            Ok(UpdateFragment {
-                slot: row.get(0)?,
-                category: row.get(1)?,
-                name: row.get(2)?,
-                lore: row.get(3)?,
-                status: row.get(4)?,
-                skill: row.get(5)?,
-                user: row.get(6)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
+        let mut stmt = conn.prepare("SELECT slot,category FROM fragment WHERE eno=?1")?;
+        let result: Vec<(i8, String)> = stmt.query_map(params![eno], |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+            ))
+        })?.collect::<Result<_, _>>()?;
         Ok(result)
     }().map_err(|err| ErrorInternalServerError(err))?;
-    // コスト
-    let mut cost = 30;
-    // 判定
+    let mut cost = 70;
+    // カテゴリ所持判定
     if info.force != Some(true) {
-        let mut predicate = CreateFragmentPredicate{
-            has_category: false,
-            hp: ops::Range{ start: 0, end: 1 },
-            mp: ops::Range{ start: 0, end: 1 },
-            atk: ops::Range{ start: 0, end: 1 },
-            tec: ops::Range{ start: 0, end: 1 },
-            has_skill: if info.skill == None { true } else { false }
-        };
-        // マテリアル判定
         for i in &info.material {
-            if let Some(f) = result.iter().find(|&x| &x.slot == i) {
+            if let Some(f) = result.iter().find(|&x| &x.0 == i) {
                 // カテゴリ所持
-                if !predicate.has_category && info.category == f.category {
-                    predicate.has_category = true;
+                if info.category == f.1 {
+                    cost -= 20;
+                    break;
                 }
-                // ステータス範囲
-                let hp = (f.status[0] as i16) << 8 | f.status[1] as i16;
-                let mp = (f.status[2] as i16) << 8 | f.status[3] as i16;
-                let atk = (f.status[4] as i16) << 8 | f.status[5] as i16;
-                let tec = (f.status[6] as i16) << 8 | f.status[7] as i16;
-                predicate.hp.start = cmp::min(predicate.hp.start, hp);
-                predicate.hp.end = cmp::max(predicate.hp.end, hp + 1);
-                predicate.mp.start = cmp::min(predicate.mp.start, mp);
-                predicate.mp.end = cmp::max(predicate.mp.end, mp + 1);
-                predicate.atk.start = cmp::min(predicate.atk.start, atk);
-                predicate.atk.end = cmp::max(predicate.atk.end, atk + 1);
-                predicate.tec.start = cmp::min(predicate.tec.start, tec);
-                predicate.tec.end = cmp::max(predicate.tec.end, tec + 1);
-                // スキル所持
-                if !predicate.has_skill && info.skill == f.skill {
-                    predicate.has_skill = true;
-                }
+            } else {
+                return Err(ErrorBadRequest("所持していないフラグメントを素材にしようとしました"));
             }
-        }
-        // カテゴリ未所持ならコスト加算
-        if !predicate.has_category {
-            cost += 10;
-        }
-        // 判定
-        if !predicate.has_skill {
-            return Err(ErrorBadRequest("設定しようとしているスキルは素材に含まれていません"));
-        }
-        // println!("hp: {}..{}, mp: {}..{}, atk: {}..{}, tec: {}..{}", predicate.hp.start, predicate.hp.end, predicate.mp.start, predicate.mp.end, predicate.atk.start, predicate.atk.end, predicate.tec.start, predicate.tec.end);
-        if !(predicate.hp.contains(&info.hp) && predicate.mp.contains(&info.mp) && predicate.atk.contains(&info.atk) && predicate.tec.contains(&info.tec)) {
-            return Err(ErrorBadRequest("ステータスが素材の範囲に収まっていません"));
         }
     }
     // 名前一文字につき2
     cost += info.name.grapheme_indices(true).count() as i32 * 2;
-    // 計算だとhp,mp*3==atk,tecだった　それを*5
-    cost += info.hp as i32 * 5;
-    cost += info.mp as i32 * 5;
-    cost += info.atk as i32 * 15;
-    cost += info.tec as i32 * 15;
-    // スキルが設定されているなら+30
-    if info.skill != None {
-        cost += 30;
-    }
-    // 説明文1行（改行または30文字まで）ごとに4
+    // 説明文1行（改行または30文字まで）ごとに8
     for i in info.lore.lines() {
-        cost += ((i.grapheme_indices(true).count() as i32 - 1) / 30 + 1) * 4;
+        cost += ((i.grapheme_indices(true).count() as i32 - 1) / 30 + 1) * 8;
     }
     // 素材の数*10だけ割引
     cost -= info.material.len() as i32 * 10;
+    // 最低保証
     cost = cost.max(10);
     // キンス取得
     let kins: i32 = conn.query_row("SELECT kins FROM character WHERE eno=?1", params![eno], |row| Ok(row.get(0)?))
@@ -919,44 +851,27 @@ pub(super) async fn create_fragment(req: HttpRequest, info: web::Json<CreateFrag
     if cost > kins {
         return Err(ErrorBadRequest("キンスを支払えません"));
     }
+    let base = info.material[0];
+    let other = if info.material.len() > 1 {&info.material[1..]} else {&[]};
+    // フラグメント編集
+    conn.execute("UPDATE fragment SET category=?1,name=?2,lore=?3,user=true WHERE eno=?4 AND slot=?5",
+        params![
+            info.category,
+            info.name,
+            lore,
+            eno,
+            base,
+        ]
+    ).map_err(|err| ErrorInternalServerError(err))?;
+    // コスト減算
+    conn.execute("UPDATE character SET kins=?1 WHERE eno=?2", params![kins - cost, eno])
+        .map_err(|err| ErrorInternalServerError(err))?;
     // 素材フラグメント削除
     conn.execute(
-        &format!("DELETE FROM fragment WHERE eno=?1 AND slot IN ({})", info.material.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(",")),
+        &format!("DELETE FROM fragment WHERE eno=?1 AND slot IN ({})", other.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(",")),
         params![eno],
     ).map_err(|err| ErrorInternalServerError(err))?;
-    // 空きスロット取得
-    match common::get_empty_slot(&conn, eno)
-        .map_err(|err| ErrorInternalServerError(err))? {
-        Some(slot) => {
-            let status = [
-                (info.hp >> 8) as u8, info.hp as u8,
-                (info.mp >> 8) as u8, info.mp as u8,
-                (info.atk >> 8) as u8, info.atk as u8,
-                (info.tec >> 8) as u8, info.tec as u8,
-            ];
-            // フラグメント追加
-            conn.execute("INSERT INTO fragment(eno,slot,category,name,lore,status,skill,user) VALUES(?1,?2,?3,?4,?5,?6,?7,true)",
-                params![
-                    eno,
-                    slot,
-                    info.category,
-                    info.name,
-                    lore,
-                    status,
-                    info.skill,
-                ]
-            ).map_err(|err| ErrorInternalServerError(err))?;
-            // コスト減算
-            conn.execute("UPDATE character SET kins=?1 WHERE eno=?2", params![kins - cost, eno])
-                .map_err(|err| ErrorInternalServerError(err))?;
-            Ok(web::Json(cost))
-        }
-        None => {
-            conn.execute("UPDATE character SET kins=?1 WHERE eno=?2", params![kins + cost * 10, eno])
-                .map_err(|err| ErrorInternalServerError(err))?;
-            Err(ErrorInternalServerError("エラーが発生したため、素材フラグメントが削除されました。<br>補填として消費キンス*10を追加しました。<br>運営に報告をお願いいたします。"))
-        }
-    }
+    Ok(web::Json(cost))
 }
 pub(super) async fn get_has_kins(req: HttpRequest) -> Result<web::Json<i32>, actix_web::Error> {
     // ログインセッションを取得
@@ -1284,40 +1199,19 @@ pub(super) async fn receive_battle(req: HttpRequest, info: web::Json<ReceiveBatt
                 let handle = actix_rt::spawn(common::send_webhook(info.from, format!("Eno.{} との戦闘が開始しました。", eno)));
                 // 戦闘処理
                 let log = battle::battle([info.from, eno]).map_err(|err| ErrorInternalServerError(err))?;
-                let log_json = serde_json::to_string(&log).map_err(|err| ErrorInternalServerError(err))?;
-                // データベースに保存
-                conn.execute(
-                    "INSERT INTO battle(left_eno,right_eno,result,log) VALUES(?1,?2,?3,?4)",
-                    params![
-                        info.from,
-                        eno,
-                        log.result,
-                        log_json,
-                    ]
-                ).map_err(|err| ErrorInternalServerError(err))?;
-                // フラグメント移動
-                let fragment = match log.result.as_str() {
-                    "left" => take_fragment(&conn, info.from, eno).map_err(|err| ErrorInternalServerError(err))?,
-                    "right" => take_fragment(&conn, eno, info.from).map_err(|err| ErrorInternalServerError(err))?,
-                    _ => None,
-                };
                 let _ = handle.await;
                 // 戦闘ログを返す
-                if let Some(fragment) = fragment {
-                    Ok(format!("{{\"result\":\"{}\",\"log\":{},\"fragment\":\"{}\"}}", log.result, log_json, fragment))
-                } else {
-                    Ok(format!("{{\"result\":\"{}\",\"log\":{}}}", log.result, log_json))
-                }
+                Ok(log)
             } else {
                 // 戦闘処理を省略して勝敗決定
                 // 攻撃者に連絡
                 let handle = actix_rt::spawn(common::send_webhook(info.from, format!("Eno.{} との戦闘が省略され、{}しました。", eno, if plan != 0 { "勝利" } else { "敗北" })));
                 // フラグメント移動
                 let fragment = if plan == 0 {
-                    take_fragment(&conn, eno, info.from)
+                    battle::take_fragment(&conn, eno, info.from)
                         .map_err(|err| ErrorInternalServerError(err))?
                 } else {
-                    take_fragment(&conn, info.from, eno)
+                    battle::take_fragment(&conn, info.from, eno)
                         .map_err(|err| ErrorInternalServerError(err))?
                 };
                 let _ = handle.await;
@@ -1338,41 +1232,6 @@ pub(super) async fn receive_battle(req: HttpRequest, info: web::Json<ReceiveBatt
             // 被攻撃者に連絡
             Ok("{{\"result\":\"escape\"}}".to_string())
         }
-    }
-}
-
-fn take_fragment(conn: &Connection, win: i16, lose: i16) -> Result<Option<String>, rusqlite::Error> {
-    let mut stmt = conn.prepare("SELECT slot,category,name,lore,status,skill,user FROM fragment WHERE eno=?1 AND slot<=20")?;
-    // 候補の取得
-    let result = stmt.query_map(params![lose], |row| {
-        Ok(UpdateFragment{
-            slot: row.get(0)?,
-            category: row.get(1)?,
-            name: row.get(2)?,
-            lore: row.get(3)?,
-            status: row.get(4)?,
-            skill: row.get(5)?,
-            user: row.get(6)?,
-        })
-    })?.collect::<Result<Vec<_>, _>>()?;
-    // 移動対象を決定
-    let buf = &result[rand::random::<usize>() % result.len()];
-    let t = {
-        if buf.category == "名前" {
-            if let Some(doll) = result.iter().find(|&x| x.category == "身代わり") {
-                doll
-            } else {
-                buf
-            }
-        } else { buf }
-    };
-    // 勝利者のスロットに空きがある場合
-    if let Some(slot) = common::get_empty_slot(&conn, win)? {
-        // フラグメントの移動
-        conn.execute("UPDATE fragment SET eno=?1,slot=?2 WHERE eno=?3 AND slot=?4", params![win, slot, lose, t.slot])?;
-        Ok(Some(t.name.clone()))
-    } else {
-        Ok(None)
     }
 }
 

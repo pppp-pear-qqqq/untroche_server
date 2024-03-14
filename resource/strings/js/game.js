@@ -115,11 +115,12 @@ function load_timeline(container, num, start, from, to, location, word) {
 			const template = document.getElementById('template_talk');
 			load(container, ret, i => {
 				const e = template.content.cloneNode(true);
+				const to = e.querySelector('.to');
 				if (i['to'] !== null) {
-					const to = e.querySelector('.to');
-					to.innerText = `>> Eno.${i['to']}`
-					to.classList.remove('hide');
+					to.innerText = `>> Eno.${i['to']}`;
+					if (i['to'] !== eno && i['from'] !== eno) e.querySelector('.talk').classList.add('close');
 				}
+				else to.remove();
 				const location = e.querySelector('.location');
 				let lock = false;
 				if (i['location'] === null) {
@@ -128,16 +129,7 @@ function load_timeline(container, num, start, from, to, location, word) {
 				} else {
 					location.innerText = i['location'];
 				}
-				const talk = e.querySelector('.talk');
-				if (i['from'] !== eno) {
-					e.querySelector('.delete').remove();
-				} else {
-					e.querySelector('.delete').onclick = () => {
-						alertify.confirm('発言を削除します。よろしいですか？', () => {
-							delete_chat(i['id'], talk);
-						})
-					}
-				}
+				if (i['from'] !== eno) e.querySelector('.delete').remove();
 				const name = e.querySelector('.name');
 				name.innerText = i['name'];
 				name.onclick = () => load_profile(i['from']);
@@ -146,7 +138,9 @@ function load_timeline(container, num, start, from, to, location, word) {
 				e.querySelector('.id').innerText = `id:${i['id']}`;
 				e.querySelector('.timestamp').innerText = i['timestamp'];
 				e.querySelector('.word').innerHTML = i['word'];
-				e.querySelector('.talk').style.borderColor = `#${array_to_colorcode(i['color'])}`;
+				const talk = e.querySelector('.talk');
+				talk.style.borderColor = `#${array_to_colorcode(i['color'])}`;
+				talk.dataset.id = i['id'];
 				e.querySelector('.reply').onclick = () => to_chat(i['from'], lock, `>>${i['id']}`);
 				return e;
 			}, make_element('<div class="talk"><p class="word">発言がありません</p></div>'), true);
@@ -220,7 +214,19 @@ function load_fragments(container) {
 					};
 					e.onclick = event => {
 						if (create_mode) {
-							e.classList.toggle('material');
+							if (e.classList.contains('material')) {
+								const prev = container.querySelector('.base_material');
+								if (prev !== null) {
+									prev.classList.remove('base_material');
+									prev.classList.add('material');
+								}
+								e.classList.remove('material');
+								e.classList.add('base_material');
+							} else if (e.classList.contains('base_material')) {
+								e.classList.remove('base_material');
+							} else {
+								e.classList.add('material');
+							}
 							reload_material();
 						} else open_desc(event.currentTarget);
 					};
@@ -408,17 +414,30 @@ function explore() {
 			// exploreの最初の行を取得
 			const log = document.querySelector('#explore .log');
 			let next = explore_text.shift();
-			if (next.includes('$input-nullable')) {
-				next = next.replaceAll('$input-nullable', '<input type="text" placeholder="16文字以下"><a onclick="next(this.previousElementSibling.value,this)">決定</a>');
-				explore_selectable = true;
-			}
-			if (next.includes('$input')) {
-				next = next.replaceAll('$input', '<input type="text" placeholder="16文字以下"><a onclick="next(this.previousElementSibling.value,this,true)">決定</a>');
-				explore_selectable = true;
-			}
-			if (next.includes('$')) {
-				next = next.replaceAll(/\$\((.+?),(.+?)\)/g, '<a onclick="next(\'$2\',this)">$1</a>');
-				explore_selectable = true;
+			if (next.startsWith('{')) {
+				const raw = JSON.parse(next);
+				battle = new Battle(raw);
+				load_fragments(document.querySelector('#fragment .container'), document.querySelector('#fragment .container.trash'));
+				load_battle_logs(document.querySelector('#battle>.log'), eno);
+				switch (raw['result']) {
+					case 'left': next = '──勝利'; break;
+					case 'right': next = '──敗北'; break;
+					case 'draw': next = '──引分'; break;
+					case 'escape': next = '──逃走'; break;
+				}
+			} else {
+				if (next.includes('$input-nullable')) {
+					next = next.replaceAll('$input-nullable', '<input type="text" placeholder="16文字以下"><a onclick="next(this.previousElementSibling.value,this)">決定</a>');
+					explore_selectable = true;
+				}
+				if (next.includes('$input')) {
+					next = next.replaceAll('$input', '<input type="text" placeholder="16文字以下"><a onclick="next(this.previousElementSibling.value,this,true)">決定</a>');
+					explore_selectable = true;
+				}
+				if (next.includes('$')) {
+					next = next.replaceAll(/\$\((.+?),(.+?)\)/g, '<a onclick="next(\'$2\',this)">$1</a>');
+					explore_selectable = true;
+				}
 			}
 			const p = document.createElement('p');
 			p.innerHTML = next.trim();
@@ -488,16 +507,21 @@ function talk() {
 		});
 	} else alertify.error('発言内容がありません');
 }
-function delete_chat(id, elem) {
-	ajax.open({
-		url: 'strings/delete_chat',
-		post: {id: id},
-		ok: () => {
-			alertify.success('発言を削除しました');
-			if (elem !== undefined && elem !== null)
+function delete_chat(elem) {
+	alertify.confirm('発言を削除します。よろしいですか？', () => {
+		const id = Number(elem.dataset.id);
+		ajax.open({
+			url: 'strings/delete_chat',
+			post: {id: id},
+			ok: () => {
+				alertify.success('発言を削除しました');
 				elem.remove();
-		}
+			}
+		})
 	})
+}
+function toggle_display_talk(elem) {
+	elem.classList.toggle('close');
 }
 function preview_open() {
 	const form = document.querySelector('#chat>.talk');
@@ -713,8 +737,8 @@ function update_fragments() {
 		change.push({
 			prev: prev,
 			next: [].slice.call(fragments.children).indexOf(elem) + 1,
-			skill_name: skill.dataset.name,
-			skill_word: skill.dataset.word,
+			skill_name: skill.dataset.name !== '' ? skill.dataset.name : null,
+			skill_word: skill.dataset.word !== '' ? skill.dataset.word : null,
 			trash: elem.classList.contains('trash'),
 			pass: to,
 		});
@@ -763,86 +787,76 @@ function change_create_mode() {
 }
 function reload_material() {
 	const create = document.querySelector('#fragment>.create');
-	const hp = create.querySelector('[name="hp"]');
-	const mp = create.querySelector('[name="mp"]');
-	const atk = create.querySelector('[name="atk"]');
-	const tec = create.querySelector('[name="tec"]');
-	const skill = create.querySelector('[name="skill"]');
-	// 初期化
-	hp.min = 0;
-	hp.max = 0;
-	mp.min = 0;
-	mp.max = 0;
-	atk.min = 0;
-	atk.max = 0;
-	tec.min = 0;
-	tec.max = 0;
-	const option = document.createElement('option');
-	option.innerText = 'なし';
-	option.value = '';
-	skill.replaceChildren(option);
+	const category = create.querySelector('[name="category"]');
+	const name = create.querySelector('[name="name"]');
+	const lore = create.querySelector('[name="lore"]');
+	const hp = create.querySelector('.hp');
+	const mp = create.querySelector('.mp');
+	const atk = create.querySelector('.atk');
+	const tec = create.querySelector('.tec');
+	const skill = create.querySelector('.skill');
 	// 設定
-	document.querySelector('#fragment .container').querySelectorAll('.material').forEach(elem => {
-		// ステータス範囲
-		const status = elem.querySelector('.status');
-		hp.min = Math.min(hp.min, Number(status.dataset.hp));
-		hp.max = Math.max(hp.max, Number(status.dataset.hp));
-		mp.min = Math.min(mp.min, Number(status.dataset.mp));
-		mp.max = Math.max(mp.max, Number(status.dataset.mp));
-		atk.min = Math.min(atk.min, Number(status.dataset.atk));
-		atk.max = Math.max(atk.max, Number(status.dataset.atk));
-		tec.min = Math.min(tec.min, Number(status.dataset.tec));
-		tec.max = Math.max(tec.max, Number(status.dataset.tec));
-		// スキル
-		const s = elem.querySelector('.skill');
-		if (!s.classList.contains('none')) {
-			const option = document.createElement('option');
-			option.value = s.dataset.id;
-			option.innerText = s.dataset.defaultname;
-			skill.appendChild(option);
-		}
-	});
+	const base = document.querySelector('#fragment .container>.base_material');
+	if (base !== null) {
+		category.value = base.dataset.category;
+		name.value = base.querySelector('.name').innerText;
+		lore.value = base.dataset.lore;
+		const status = base.querySelector('.status');
+		hp.dataset.value = status.dataset.hp;
+		mp.dataset.value = status.dataset.mp;
+		atk.dataset.value = status.dataset.atk;
+		tec.dataset.value = status.dataset.tec;
+		skill.innerText = base.querySelector('.skill').innerText;
+		category.disabled = false;
+		name.disabled = false;
+		lore.disabled = false;
+	} else {
+		category.value = '';
+		name.value = 'ベースが指定されていません';
+		lore.value = 'ベースフラグメントは選択状態のフラグメントをもう一度選択することで指定できます。\n更にもう一度選択して素材指定を解除できます。';
+		hp.dataset.value = '';
+		mp.dataset.value = '';
+		atk.dataset.value = '';
+		tec.dataset.value = '';
+		skill.innerText = '';
+		category.disabled = true;
+		name.disabled = true;
+		lore.disabled = true;
+	}
 	calc_cost();
 }
 function calc_cost() {
 	const create = document.querySelector('#fragment>.create');
-	let cost = 30;
+	let cost = 70;
 	cost += create.querySelector('[name="name"]').value.length * 2;
 	create.querySelector('[name="lore"]').value.split(/\r|\n|\r\n/).forEach(line => cost += Math.floor((line.length - 1) / 30 + 1) * 4);
-	cost += Number(create.querySelector('[name="hp"]').value) * 5;
-	cost += Number(create.querySelector('[name="mp"]').value) * 5;
-	cost += Number(create.querySelector('[name="atk"]').value) * 15;
-	cost += Number(create.querySelector('[name="tec"]').value) * 15;
-	if (create.querySelector('[name="skill"]').value !== "") cost += 30;
 	const category = create.querySelector('[name="category"]').value;
 	let find = false;
-	document.querySelector('#fragment .container').querySelectorAll('.material').forEach(elem => {
+	document.querySelector('#fragment .container').querySelectorAll('.material,.base_material').forEach(elem => {
 		cost -= 10;
-		if (elem.dataset.category === category) {
+		if (!find && elem.dataset.category === category) {
 			find = true;
-			return
+			cost -= 20;
 		}
 	});
-	if (!find) cost += 10;
-	cost = Math.max(cost, 10);
-	create.querySelector('.cost').dataset.cost = cost;
+	create.querySelector('.cost').dataset.cost = Math.max(cost, 10);
 }
 function create_fragment() {
-	let material = [];
 	const create = document.querySelector('#fragment>.create');
 	const category = create.querySelector('[name="category"]').value;
 	const name = create.querySelector('[name="name"]').value;
 	const lore = create.querySelector('[name="lore"]').value;
-	const hp =  Number(create.querySelector('[name="hp"]').value);
-	const mp =  Number(create.querySelector('[name="mp"]').value);
-	const atk = Number(create.querySelector('[name="atk"]').value);
-	const tec = Number(create.querySelector('[name="tec"]').value);
-	const skill = Number(create.querySelector('[name="skill"]').value);
 	const fragments = document.querySelector('#fragment .container');
+	let base = fragments.querySelector('.base_material');
+	if (base === null) {
+		alertify.warning('ベースフラグメントが選択されていません<br>（二回選択してベース指定ができます）');
+		return;
+	}
+	let material = [Number(base.dataset.slot)];
 	fragments.querySelectorAll('.material').forEach(elem => {
 		material.push(Number(elem.dataset.slot));
 	});
-	const params = {material: material, category: category, name: name, lore: lore, hp: hp, mp: mp, atk: atk, tec: tec, skill: skill!==0?skill:null};
+	const params = {material: material, category: category, name: name, lore: lore};
 	ajax.open({
 		url: 'strings/create_fragment',
 		ret: 'json',
@@ -929,8 +943,8 @@ function receive_battle(from, plan) {
 					load_fragments(document.querySelector('#fragment .container'), document.querySelector('#fragment .container.trash'));
 				}
 				f(alert);
-				if (ret['log'] !== undefined) {
-					battle = new Battle(ret['log']);
+				if (ret['turn'] !== undefined) {
+					battle = new Battle(ret);
 					load_battle_logs(document.querySelector('#battle>.log'), eno);
 				}
 			}
@@ -1093,7 +1107,10 @@ window.addEventListener('load', async () => {
 	// リスト更新
 	document.querySelector('#location h4>.reload').onclick = async () => load_characters(document.querySelector('#location .characters'), 1000);
 	document.querySelector('#other h4>.reload').onclick = async () => load_characters(document.querySelector('#other .characters'), 1000, null, '*');
-	document.querySelector('#battle h4>.reload').onclick = () => load_battle_logs(document.querySelector('#battle .log'), eno);
+	document.querySelector('#battle h4>.reload').onclick = () => {
+		load_battle_logs(document.querySelector('#battle .log'), eno);
+		alertify.success('更新しました');
+	};
 
 	// 自分のプロフィール
 	document.querySelector('#other .my_profile').onclick = () => load_profile(eno);

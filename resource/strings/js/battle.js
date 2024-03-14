@@ -120,10 +120,19 @@ class Battle {
 				}
 				// スキル名
 				if (turn['skill'] !== null) {
-					const p = document.createElement('p');
-					p.className = 'skill';
-					p.innerHTML = turn['skill'];
-					div.appendChild(p);
+					if (battle.version < 0.2) {
+						const p = document.createElement('p');
+						p.className = 'skill';
+						p.innerHTML = turn['skill'];
+						div.appendChild(p);
+					} else {
+						const p = document.createElement('p');
+						p.className = 'skill';
+						p.innerHTML = turn['skill'][0];
+						if (turn['skill'][1] !== null)
+							p.innerHTML += `<span class="tip">(${turn['skill'][1]})<span>`;
+						div.appendChild(p);
+					}
 				}
 				// スキル効果
 				if (turn['action'] !== null) {

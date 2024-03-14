@@ -42,6 +42,7 @@ pub fn config(cfg: &mut web::ServiceConfig) {
 		.route("/get_battle_reserve", web::get().to(func::get_battle_reserve))
 		.route("/next", web::post().to(scene::next))
 		.route("/admin", web::get().to(admin::index))
+		.route("/admin/get_characters", web::get().to(admin::get_characters))
 		.route("/admin/get_fragments", web::get().to(admin::get_fragments))
 		.route("/admin/get_skills", web::get().to(admin::get_skills))
 		.route("/admin/get_players_fragments", web::get().to(admin::get_players_fragments))

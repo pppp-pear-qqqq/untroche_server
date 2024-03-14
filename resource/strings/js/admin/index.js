@@ -141,22 +141,14 @@ function update_fragment(form, make) {
 	const category = form.querySelector('[name="category"]').value;
 	const name = form.querySelector('[name="name"]').value;
 	const lore = form.querySelector('[name="lore"]').value;
-	let id = form.querySelector('.id').innerText;
-	let hp = form.querySelector('[name="hp"]').value;
-	let mp = form.querySelector('[name="mp"]').value;
-	let atk = form.querySelector('[name="atk"]').value;
-	let tec = form.querySelector('[name="tec"]').value;
-	let skill = form.querySelector('[name="skill"]').value;
-	if (make !== true) {
-		id = Number(id);
-	} else {
-		id = null;
-	}
-	hp = isNaN(hp) ? null : Number(hp);
-	mp = isNaN(mp) ? null : Number(mp);
-	atk = isNaN(atk) ? null : Number(atk);
-	tec = isNaN(tec) ? null : Number(tec);
-	skill = isNaN(skill) ? null : Number(skill);
+	let id = null;
+	if (make !== true) id = Number(form.querySelector('.id').innerText);
+	const hp = Number(form.querySelector('[name="hp"]').value);
+	const mp = Number(form.querySelector('[name="mp"]').value);
+	const atk = Number(form.querySelector('[name="atk"]').value);
+	const tec = Number(form.querySelector('[name="tec"]').value);
+	let skill = Number(form.querySelector('[name="skill"]').value);
+	if (skill === 0) skill = null;
 	ajax.open({
 		url: 'admin/update_fragment',
 		ret: 'text',
@@ -165,7 +157,7 @@ function update_fragment(form, make) {
 			alertify.success(ret);
 			form.classList.remove('changed');
 			if (make === true) {
-				const frame = document.getElementById('template').content.querySelector('div.skill').cloneNode(true);
+				const frame = document.getElementById('template').content.querySelector('div.fragment').cloneNode(true);
 				frame.querySelector('.id').innerText = frame.dataset.id = Number(form.previousElementSibling.querySelector('.id').innerText) + 1;
 				frame.querySelector('.category').value = form.querySelector('.category').value;
 				frame.querySelector('.name').value = form.querySelector('.name').value;
