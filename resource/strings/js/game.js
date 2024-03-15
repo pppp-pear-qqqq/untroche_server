@@ -800,7 +800,7 @@ function reload_material() {
 	if (base !== null) {
 		category.value = base.dataset.category;
 		name.value = base.querySelector('.name').innerText;
-		lore.value = base.dataset.lore;
+		lore.value = base.dataset.lore.replaceAll('<br>', '\n');
 		const status = base.querySelector('.status');
 		hp.dataset.value = status.dataset.hp;
 		mp.dataset.value = status.dataset.mp;
@@ -810,6 +810,7 @@ function reload_material() {
 		category.disabled = false;
 		name.disabled = false;
 		lore.disabled = false;
+		calc_cost();
 	} else {
 		category.value = '';
 		name.value = 'ベースが指定されていません';
@@ -822,14 +823,14 @@ function reload_material() {
 		category.disabled = true;
 		name.disabled = true;
 		lore.disabled = true;
+		create.querySelector('.cost').dataset.cost = '';
 	}
-	calc_cost();
 }
 function calc_cost() {
 	const create = document.querySelector('#fragment>.create');
 	let cost = 70;
 	cost += create.querySelector('[name="name"]').value.length * 2;
-	create.querySelector('[name="lore"]').value.split(/\r|\n|\r\n/).forEach(line => cost += Math.floor((line.length - 1) / 30 + 1) * 4);
+	create.querySelector('[name="lore"]').value.split(/\r|\n|\r\n/).forEach(line => cost += Math.floor((line.length - 1) / 30 + 1) * 8);
 	const category = create.querySelector('[name="category"]').value;
 	let find = false;
 	document.querySelector('#fragment .container').querySelectorAll('.material,.base_material').forEach(elem => {

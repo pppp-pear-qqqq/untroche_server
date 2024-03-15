@@ -1,3 +1,5 @@
+var hold_element = null;
+
 function get_skill_name(id) {
 	if (id == 0) {
 		return '';
@@ -84,16 +86,36 @@ function make_fragments_skills(text) {
 	})
 }
 
+function load_characters(container) {
+	ajax.open({
+		url: 'admin/get_characters',
+		ret: 'json',
+		ok: ret => {
+			const template = document.getElementById('template').content.querySelector('div.character');
+			container.replaceChildren();
+			ret.forEach(f => {
+				const frame = template.cloneNode(true);
+				frame.querySelector('.eno').innerText = f['eno'];
+				frame.querySelector('.name').innerText = f['name'];
+				frame.querySelector('.location').value = f['location'];
+				frame.querySelector('.kins').value = f['kins'];
+				frame.querySelectorAll('[name]').forEach(elem => elem.addEventListener('change', add_changed));
+				container.appendChild(frame);
+			});
+		}
+	})
+}
 /**
  * @param {HTMLElement} form 
  */
 function update_character(form) {
-	const eno = form.querySelector('.eno').innerText;
+	const eno = Number(form.querySelector('.eno').innerText);
 	const location = form.querySelector('[name="location"]').value;
+	const kins = form.querySelector('[name="kins"]').value;
 	ajax.open({
 		url: 'admin/update_character',
 		ret: 'text',
-		post: {eno: Number(eno), location: location},
+		post: {eno: eno, location: location, kins: kins !== '' ? Number(kins) : 0},
 		ok: ret => {
 			alertify.success(ret);
 		}
@@ -311,6 +333,175 @@ function update_player_fragment(form, remove) {
 			alertify.success(ret);
 			if (remove === true) form.remove();
 			else form.classList.remove('changed');
+		}
+	})
+}
+
+function add_npc_skill(root) {
+	const frame = document.getElementById('template').content.querySelector('div.npc_skill').cloneNode(true);
+	frame.ondragstart = event => hold_element = event.currentTarget;
+	frame.ondragend = () => hold_element = null;
+	frame.ondragenter = event => {
+		if (hold_element !== null) {
+			const target = event.currentTarget;
+			if (target !== hold_element) {
+				const parent = target.parentNode;
+				const next = target.nextElementSibling;
+				if (next === hold_element) {
+					parent.insertBefore(hold_element, target);
+				} else {
+					parent.insertBefore(target, hold_element);
+					parent.insertBefore(hold_element, next);
+				}
+			}
+		}
+	};
+	root.before(frame);
+}
+function add_reward(root) {
+	const frame = document.getElementById('template').content.querySelector('div.reward').cloneNode(true);
+	root.before(frame);
+}
+function load_npcs(container) {
+	ajax.open({
+		url: 'admin/get_npcs',
+		ret: 'json',
+		ok: ret => {
+			const template = document.getElementById('template');
+			const npc = template.content.querySelector('div.npc');
+			const skill = template.content.querySelector('div.npc_skill');
+			const reward = template.content.querySelector('div.reward');
+			container.replaceChildren();
+			ret.forEach(f => {
+				const frame = npc.cloneNode(true);
+				frame.querySelector('.id').innerText = f['id'];
+				frame.querySelector('.name').value = f['name'];
+				frame.querySelector('.acronym').value = f['acronym'];
+				frame.querySelector('.color').value = `#${array_to_colorcode(f['color'])}`;
+				frame.querySelector('.start').value = f['word']['start'];
+				frame.querySelector('.win').value = f['word']['win'];
+				frame.querySelector('.lose').value = f['word']['lose'];
+				frame.querySelector('.draw').value = f['word']['draw'];
+				frame.querySelector('.escape').value = f['word']['escape'];
+				frame.querySelector('.hp').value = f['status']['hp'];
+				frame.querySelector('.mp').value = f['status']['mp'];
+				frame.querySelector('.atk').value = f['status']['atk'];
+				frame.querySelector('.tec').value = f['status']['tec'];
+				const skills = frame.querySelector('.skills');
+				f['skill'].forEach(s => {
+					const frame = skill.cloneNode(true);
+					frame.querySelector('.skill').value = s[0];
+					frame.querySelector('.skill_name').innerText = get_skill_name(s[0]);
+					frame.querySelector('.name').value = s[1];
+					frame.querySelector('.word').value = s[2];
+					frame.ondragstart = event => hold_element = event.currentTarget;
+					frame.ondragend = () => hold_element = null;
+					frame.ondragenter = event => {
+						if (hold_element !== null) {
+							const target = event.currentTarget;
+							if (target !== hold_element) {
+								const parent = target.parentNode;
+								const next = target.nextElementSibling;
+								if (next === hold_element) {
+									parent.insertBefore(hold_element, target);
+								} else {
+									parent.insertBefore(target, hold_element);
+									parent.insertBefore(hold_element, next);
+								}
+							}
+						}
+					};
+					skills.appendChild(frame);
+				});
+				skills.appendChild(make_element('<button type="button" onclick="add_npc_skill(this)">追加</button>'));
+				const rewards = frame.querySelector('.rewards');
+				f['reward'].forEach(v => {
+					const frame = reward.cloneNode(true);
+					frame.querySelector('.weight').value = v['id'];
+					frame.querySelector('.category').value = v['category'];
+					frame.querySelector('.name').value = v['name'];
+					frame.querySelector('.lore').value = v['lore'];
+					frame.querySelector('.hp').value = f['status']['hp'];
+					frame.querySelector('.mp').value = f['status']['mp'];
+					frame.querySelector('.atk').value = f['status']['atk'];
+					frame.querySelector('.tec').value = f['status']['tec'];
+					frame.querySelector('.skill').value = v['skill'];
+					frame.querySelector('.skill_name').innerText = get_skill_name(v['skill']);
+					rewards.appendChild(frame);
+				});
+				rewards.appendChild(make_element('<button type="button" onclick="add_reward(this)">追加</button>'));
+				frame.querySelectorAll('[name]').forEach(elem => elem.addEventListener('change', add_changed));
+				container.appendChild(frame);
+			});
+			const frame = npc.cloneNode(true);
+			frame.querySelector('.id').innerText = '新規';
+			frame.querySelector('.skills').appendChild(make_element('<button type="button" onclick="add_npc_skill(this)">追加</button>'));
+			frame.querySelectorAll('[name]').forEach(elem => elem.addEventListener('change', add_changed));
+			container.appendChild(frame);
+		}
+	})
+}
+function update_npc(form) {
+	let id = form.querySelector('.id').innerText;
+	let make = isNaN(id) || id === '0';
+	if (make) id = null;
+	else id = Number(id);
+	console.log(make);
+	const name = form.querySelector('[name="name"]').value;
+	const acronym = form.querySelector('[name="acronym"]').value;
+	let color = form.querySelector('[name="color"]').value;
+	color = [parseInt(color.slice(1, 3), 16), parseInt(color.slice(3, 5), 16), parseInt(color.slice(5, 7), 16)];
+	let start = form.querySelector('[name="start"]').value;
+	let win = form.querySelector('[name="win"]').value;
+	let lose = form.querySelector('[name="lose"]').value;
+	let draw = form.querySelector('[name="draw"]').value;
+	let escape = form.querySelector('[name="escape"]').value;
+	if (start === '') start = null;
+	if (win === '') win = null;
+	if (lose === '') lose = null;
+	if (draw === '') draw = null;
+	if (escape === '') escape = null;
+	const hp = Number(form.querySelector('[name="hp"]').value);
+	const mp = Number(form.querySelector('[name="mp"]').value);
+	const atk = Number(form.querySelector('[name="atk"]').value);
+	const tec = Number(form.querySelector('[name="tec"]').value);
+	let skill = [];
+	form.querySelectorAll('.npc_skill').forEach(form => {
+		let name = form.querySelector('[name="name"]').value;
+		let word = form.querySelector('[name="word"]').value;
+		if (name === '') name = null;
+		if (word === '') word = null;
+		skill.push([Number(form.querySelector('[name="skill"]').value), name, word]);
+	})
+	let reward = [];
+	form.querySelectorAll('.reward').forEach(form => {
+		const weight = Number(form.querySelector('[name="weight"]').value);
+		const category = form.querySelector('[name="category"]').value;
+		const name = form.querySelector('[name="name"]').value;
+		const lore = form.querySelector('[name="lore"]').value;
+		const hp = Number(form.querySelector('[name="hp"]').value);
+		const mp = Number(form.querySelector('[name="mp"]').value);
+		const atk = Number(form.querySelector('[name="atk"]').value);
+		const tec = Number(form.querySelector('[name="tec"]').value);
+		let skill = Number(form.querySelector('[name="skill"]').value);
+		if (skill === 0) skill = null;
+		reward.push({id: weight, category: category, name: name, lore: lore, status: {hp: hp, mp: mp, atk: atk, tec: tec}, skill: skill});
+	})
+	const params = {id: id, name: name, acronym: acronym, color: color, word: {start: start, win: win, lose: lose, draw: draw, escape: escape}, status: {hp: hp, mp: mp, atk: atk, tec: tec}, skill: skill, reward, reward};
+	console.log(params);
+	ajax.open({
+		url: 'admin/update_npc',
+		ret: 'text',
+		post: params,
+		ok: ret => {
+			alertify.success(ret);
+			form.classList.remove('changed');
+			if (make === true) {
+				const frame = form.cloneNode(true);
+				frame.querySelector('.id').innerText = frame.dataset.id = Number(form.previousElementSibling.querySelector('.id').innerText) + 1;
+				form.before(frame);
+				form.querySelectorAll('[name]').forEach(elem => elem.value = '');
+			}
 		}
 	})
 }

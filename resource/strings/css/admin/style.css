@@ -21,7 +21,26 @@ body {
 	}
 }
 
-div.fragment {
+div.character {
+	display: grid;
+	grid-template-columns: max-content 1fr;
+	>.name {
+		width: 16em;
+	}
+	>label, >button {
+		grid-column: 1 / -1;
+	}
+	>label {
+		display: flex;
+		gap: 8px;
+		>input {
+			flex-basis: 0;
+			flex-grow: 1;
+		}
+	}
+}
+
+div.fragment, div.reward {
 	display: grid;
 	grid-template-columns: repeat(4, calc(30em / 4));
 	.name {
@@ -74,5 +93,48 @@ div.load_players_fragments {
 	grid-template-columns: 1fr max-content 1fr;
 	button {
 		grid-column: 1 / -1;
+	}
+}
+
+div.npc {
+	flex-direction: column;
+	gap: 6px;
+	>div {
+		gap: 6px;
+	}
+	.name {
+		flex-basis: 0;
+		flex-grow: 1;
+	}
+	.acronym, .color {
+		width: 3em;
+	}
+	.word {
+		width: 30em;
+	}
+	.status>label {
+		display: flex;
+		gap: 4px;
+		>input {
+			width: 4em;
+		}
+	}
+	.skills, .rewards {
+		flex-direction: column;
+	}
+	div.npc_skill {
+		display: grid;
+		grid-template-columns: max-content 1fr max-content;
+		padding: 4px;
+		border: 1px solid #767676;
+		input[type="text"], button.add {
+			grid-column: 1 / -1;
+		}
+		input[type="number"] {
+			width: 4em;
+		}
+		input[type="text"] {
+			width: 30em;
+		}
 	}
 }

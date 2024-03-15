@@ -382,7 +382,6 @@ pub(super) async fn get_chat(req: HttpRequest, info: web::Query<GetChatData>) ->
         }
     }
     let sql = "SELECT id,datetime(timestamp,'+9 hours'),from_eno,to_eno,location,acronym,color,name,word FROM timeline WHERE live=true".to_string() + if sql.is_empty() { "" } else { " AND " } + &sql.join(" AND ") + " ORDER BY id DESC LIMIT :num";
-    // println!("{}", sql);
     // データベースから取得
     || -> Result<_, rusqlite::Error> {
         let mut stmt = conn.prepare(sql.as_str())?;

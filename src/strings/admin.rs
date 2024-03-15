@@ -37,8 +37,8 @@ fn sql_execute(conn: &Connection, sql: &str) -> bool {
     }
 }
 
-#[derive(Serialize)]
-struct NpcWord {
+#[derive(Serialize, Deserialize)]
+struct NPCWord {
     start: Option<String>,
     win: Option<String>,
     lose: Option<String>,
@@ -46,9 +46,9 @@ struct NpcWord {
     escape: Option<String>,
 }
 #[allow(dead_code)]
-impl NpcWord {
-    fn new(start: Option<&str>, win: Option<&str>, lose: Option<&str>, draw: Option<&str>, escape: Option<&str>) -> NpcWord {
-        NpcWord {
+impl NPCWord {
+    fn new(start: Option<&str>, win: Option<&str>, lose: Option<&str>, draw: Option<&str>, escape: Option<&str>) -> Self {
+        Self {
             start: start.map(|x| x.to_string()),
             win: win.map(|x| x.to_string()),
             lose: lose.map(|x| x.to_string()),
@@ -70,7 +70,7 @@ pub fn preset() -> Result<(), rusqlite::Error> {
     //     "盗賊女",
     //     "賊",
     //     [176u8, 54u8, 78u8],
-    //     serde_json::to_string(&NpcWord::new(
+    //     serde_json::to_string(&NPCWord::new(
     //         Some("「さっさとくたばってね」"),
     //         Some("「はっ。あたしの勝ちだ」"),
     //         Some("「……ぐっ、くそッ！」"),
@@ -226,6 +226,7 @@ pub(super) async fn get_characters(req: HttpRequest) -> Result<web::Json<Vec<Cha
 pub(super) struct CharacterData {
     eno: i16,
     location: String,
+    kins: i32,
 }
 pub(super) async fn update_character(req: HttpRequest, info: web::Json<CharacterData>) -> Result<String, actix_web::Error> {
     // パスワード取得
@@ -236,14 +237,14 @@ pub(super) async fn update_character(req: HttpRequest, info: web::Json<Character
     // パスワード確認
     check_server_password(&conn, password.value())?;
     // 処理開始
-    conn.execute("UPDATE character SET location=?1 WHERE eno=?2", params![info.location, info.eno]).map_err(|err| ErrorBadRequest(err))?;
+    conn.execute("UPDATE character SET location=?2,kins=?3 WHERE eno=?1", params![info.eno, info.location, info.kins]).map_err(|err| ErrorBadRequest(err))?;
     Ok(format!("Eno.{}のロケーションを変更しました", info.eno))
 }
 
 // ベースフラグメント
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub(super) struct Fragment {
-    id: i32,
+    id: Option<i32>,
     category: String,
     name: String,
     lore: String,
@@ -276,16 +277,7 @@ pub(super) async fn get_fragments(req: HttpRequest) -> Result<web::Json<Vec<Frag
         .map_err(|err| ErrorInternalServerError(err))?;
     Ok(web::Json(result))
 }
-#[derive(Deserialize)]
-pub(super) struct FragmentData {
-    id: Option<i32>,
-    category: String,
-    name: String,
-    lore: String,
-    status: battle::Status,
-    skill: Option<i32>,
-}
-pub(super) async fn update_fragment(req: HttpRequest, info: web::Json<FragmentData>) -> Result<String, actix_web::Error> {
+pub(super) async fn update_fragment(req: HttpRequest, info: web::Json<Fragment>) -> Result<String, actix_web::Error> {
     // パスワード取得
     let password =  req.cookie("admin_password")
         .ok_or(ErrorForbidden("パスワードが無効です"))?;
@@ -459,4 +451,119 @@ pub(super) async fn update_players_fragment(req: HttpRequest, info: web::Json<Up
         ).map_err(|err| ErrorInternalServerError(err))?;
     }
     Ok(format!("プレイヤーフラグメント編集 Eno.{}({})", info.eno, info.slot))
+}
+
+#[derive(Serialize, Deserialize)]
+pub(super) struct NPC {
+    id: Option<i32>,
+    name: String,
+    acronym: String,
+    color: [u8; 3],
+    word: NPCWord,
+    status: battle::Status,
+    skill: Vec<(i32, Option<String>, Option<String>)>,
+    reward: Vec<Fragment>,
+}
+pub(super) async fn get_npcs(req: HttpRequest) -> Result<web::Json<Vec<NPC>>, actix_web::Error> {
+    // パスワード取得
+    let password =  req.cookie("admin_password")
+        .ok_or(ErrorForbidden("パスワードが無効です"))?;
+    // データベースに接続
+	let conn = common::open_database()?;
+    // パスワード確認
+    check_server_password(&conn, password.value())?;
+    // 処理開始
+    let mut stmt = conn.prepare("SELECT id,name,acronym,color,word,status FROM npc")
+        .map_err(|err| ErrorInternalServerError(err))?;
+    let result = stmt.query_map([], |row| {
+        let id: i32 = row.get(0)?;
+        let mut stmt = conn.prepare("SELECT skill,name,word FROM npc_skill WHERE id=?1 ORDER BY slot ASC")?;
+        let skill: Vec<(i32, Option<String>, Option<String>)> = stmt.query_map(params![id], |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+            ))
+        })?.collect::<Result<_, _>>()?;
+        let mut stmt = conn.prepare("SELECT weight,category,name,lore,status,skill FROM reward WHERE npc=?1")?;
+        let reward: Vec<Fragment> = stmt.query_map(params![id], |row| {
+            Ok(Fragment{
+                id: row.get(0)?,
+                category: row.get(1)?,
+                name: row.get(2)?,
+                lore: row.get(3)?,
+                status: row.get::<_, [u8; 8]>(4)?.into(),
+                skill: row.get(5)?,
+            })
+        })?.collect::<Result<_, _>>()?;
+        Ok(NPC {
+            id: Some(id),
+            name: row.get(1)?,
+            acronym: row.get(2)?,
+            color: row.get(3)?,
+            word: serde_json::from_str(&row.get::<_, String>(4)?).map_err(|_| rusqlite::Error::InvalidColumnType(4, "npc.word".to_string(), rusqlite::types::Type::Text))?,
+            status: row.get::<_, [u8; 8]>(5)?.into(),
+            skill,
+            reward,
+        })
+    }).map_err(|err| ErrorInternalServerError(err))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|err| ErrorInternalServerError(err))?;
+    Ok(web::Json(result))
+}
+pub(super) async fn update_npc(req: HttpRequest, info: web::Json<NPC>) -> Result<String, actix_web::Error> {
+    // パスワード取得
+    let password =  req.cookie("admin_password")
+        .ok_or(ErrorForbidden("パスワードが無効です"))?;
+    // データベースに接続
+	let conn = common::open_database()?;
+    // パスワード確認
+    check_server_password(&conn, password.value())?;
+    // 処理開始
+    let word = serde_json::to_string(&info.word).map_err(|err| ErrorBadRequest(err))?;
+    let status: [u8; 8] = info.status.into();
+    if let Some(id) = info.id {
+        // 更新
+        // スキル以外の情報を更新
+        conn.execute("UPDATE npc SET name=?2,acronym=?3,color=?4,word=?5,status=?6 WHERE id=?1", params![
+            id, info.name, info.acronym, info.color, word, status
+        ]).map_err(|err| ErrorInternalServerError(err))?;
+        // 一旦スキルを全部削除
+        conn.execute("DELETE FROM npc_skill WHERE id=?1", params![id])
+            .map_err(|err| ErrorInternalServerError(err))?;
+        // 追加しなおし
+        let mut i = 0;
+        for v in &info.skill {
+            i += 1;
+            conn.execute("INSERT INTO npc_skill VALUES(?1,?2,?3,?4,?5)", params![id, i, v.0, v.1, v.2])
+                .map_err(|err| ErrorInternalServerError(err))?;
+        }
+        // 報酬も同じく削除
+        conn.execute("DELETE FROM reward WHERE npc=?1", params![id])
+            .map_err(|err| ErrorInternalServerError(err))?;
+        // 追加しなおし
+        for v in &info.reward {
+            let status: [u8; 8] = v.status.into();
+            conn.execute("INSERT INTO reward VALUES(?1,?2,?3,?4,?5,?6,?7)", params![id, v.id, v.category, v.name, v.lore, status, v.skill])
+                .map_err(|err| ErrorInternalServerError(err))?;
+        }
+        Ok(format!("NPC更新 ID{}", id))
+    } else {
+        // 追加
+        conn.execute("INSERT INTO npc(name,acronym,color,word,status) VALUES(?1,?2,?3,?4,?5)", params![info.name, info.acronym, info.color, word, status])
+            .map_err(|err| ErrorInternalServerError(err))?;
+        let id = conn.last_insert_rowid();
+        let mut i = 0;
+        for v in &info.skill {
+            i += 1;
+            conn.execute("INSERT INTO npc_skill VALUES(?1,?2,?3,?4,?5)", params![id, i, v.0, v.1, v.2])
+                .map_err(|err| ErrorInternalServerError(err))?;
+        }
+        for v in &info.reward {
+            let status: [u8; 8] = v.status.into();
+            conn.execute("INSERT INTO reward VALUES(?1,?2,?3,?4,?5,?6,?7)", params![id, v.id, v.category, v.name, v.lore, status, v.skill])
+                .map_err(|err| ErrorInternalServerError(err))?;
+        }
+        Ok(format!("NPC追加 ID{}", id))
+    }
 }

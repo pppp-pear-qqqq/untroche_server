@@ -46,11 +46,13 @@ pub fn config(cfg: &mut web::ServiceConfig) {
 		.route("/admin/get_fragments", web::get().to(admin::get_fragments))
 		.route("/admin/get_skills", web::get().to(admin::get_skills))
 		.route("/admin/get_players_fragments", web::get().to(admin::get_players_fragments))
+		.route("/admin/get_npcs", web::get().to(admin::get_npcs))
 		.route("/admin/execute_sql", web::post().to(admin::execute_sql))
 		.route("/admin/update_character", web::post().to(admin::update_character))
 		.route("/admin/update_fragment", web::post().to(admin::update_fragment))
 		.route("/admin/update_skill", web::post().to(admin::update_skill))
 		.route("/admin/update_players_fragment", web::post().to(admin::update_players_fragment))
+		.route("/admin/update_npc", web::post().to(admin::update_npc))
         .service(Files::new("/", "resource/strings").show_files_listing())
     );
 }

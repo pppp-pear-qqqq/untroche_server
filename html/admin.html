@@ -15,6 +15,13 @@
 	<script src="js/common.js"></script>
 	<script src="js/admin/index.js"></script>
 	<template id="template">
+		<div class="character">
+			<p class="eno"></p>
+			<p class="name"></p>
+			<label>現在位置<input type="text" name="location" class="location"></label>
+			<label>所持キンス<input type="number" name="kins" class="kins"></label>
+			<button type="button" onclick="update_character(this.parentNode)">更新</button>
+		</div>
 		<div class="fragment">
 			<p class="id"></p>
 			<input type="text" name="category" class="category">
@@ -65,6 +72,49 @@
 			<input type="number" name="min"> ~ <input type="number" name="max">
 			<button type="button" onclick="call_load_players_fragments(this.parentNode)">取得</button>
 		</div>
+		<div class="npc">
+			<div>
+				<p class="id"></p>
+				<input type="text" name="name" class="name" placeholder="名前">
+				<input type="text" name="acronym" class="acronym" placeholder="短縮名">
+				<input type="color" name="color" class="color">
+			</div>
+			<input type="text" name="start" class="word start" placeholder="開始">
+			<input type="text" name="win" class="word win" placeholder="勝利">
+			<input type="text" name="lose" class="word lose" placeholder="敗北">
+			<input type="text" name="draw" class="word draw" placeholder="引分">
+			<input type="text" name="escape" class="word escape" placeholder="逃走">
+			<div class="status">
+				<label>H<input type="number" name="hp" class="hp"></label>
+				<label>M<input type="number" name="mp" class="mp"></label>
+				<label>A<input type="number" name="atk" class="atk"></label>
+				<label>T<input type="number" name="tec" class="tec"></label>
+			</div>
+			<h4 onclick="this.nextElementSibling.classList.toggle('hide')">使用スキル</h4>
+			<div class="skills hide"></div>
+			<h4 onclick="this.nextElementSibling.classList.toggle('hide')">報酬</h4>
+			<div class="rewards hide"></div>
+			<button type="button" onclick="update_npc(this.parentNode)">更新</button>
+		</div>
+		<div class="npc_skill" draggable="true">
+			<input type="number" name="skill" class="skill" placeholder="スキル" onchange="this.nextElementSibling.innerText = get_skill_name(this.value)">
+			<p class="skill_name"></p>
+			<button type="button" class="remove" onclick="this.parentNode.remove()">削除</button>
+			<input type="text" name="name" class="name" placeholder="変更後スキル名">
+			<input type="text" name="word" class="word" placeholder="発動時台詞">
+		</div>
+		<div class="reward">
+			<input type="number" name="weight" class="weight" placeholder="重み">
+			<input type="text" name="category" class="category" placeholder="カテゴリ">
+			<input type="text" name="name" class="name" placeholder="名前">
+			<textarea name="lore" class="lore" placeholder="説明文"></textarea>
+			<input type="number" name="hp" class="hp" placeholder="HP">
+			<input type="number" name="mp" class="mp" placeholder="MP">
+			<input type="number" name="atk" class="atk" placeholder="ATK">
+			<input type="number" name="tec" class="tec" placeholder="TEC">
+			<input type="number" name="skill" class="skill" placeholder="スキル" onchange="this.nextElementSibling.innerText = get_skill_name(this.value)">
+			<p class="skill_name"></p>
+		</div>
 	</template>
 </head>
 <body class="scroll">
@@ -74,6 +124,10 @@
 		<textarea id="input"></textarea>
 		<button onclick="execute_sql(document.getElementById('input').value)">SQL実行</button>
 		<button onclick="make_fragments_skills(document.getElementById('input').value)">スキル・フラグメント作成</button>
+	</div>
+	<h3 onclick="this.nextElementSibling.classList.toggle('hide')">キャラクター</h3>
+	<div>
+		<button type="button" onclick="load_characters(this.parentNode)">取得</button>
 	</div>
 	<h3 onclick="this.nextElementSibling.classList.toggle('hide')">スキル</h3>
 	<div>
@@ -89,5 +143,9 @@
 			<input type="number" name="min" value="1"> ~ <input type="number" name="max" value="31">
 			<button type="button" onclick="call_load_players_fragments(this.parentNode)">取得</button>
 		</div>
+	</div>
+	<h3 onclick="this.nextElementSibling.classList.toggle('hide')">NPC</h3>
+	<div>
+		<button type="button" onclick="load_npcs(this.parentNode)">取得</button>
 	</div>
 </body>
