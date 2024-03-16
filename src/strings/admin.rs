@@ -520,6 +520,7 @@ pub(super) async fn update_npc(req: HttpRequest, info: web::Json<NPC>) -> Result
     // パスワード確認
     check_server_password(&conn, password.value())?;
     // 処理開始
+    let re = Regex::new("\r|\n|\r\n").map_err(|err| ErrorInternalServerError(err))?;
     let word = serde_json::to_string(&info.word).map_err(|err| ErrorBadRequest(err))?;
     let status: [u8; 8] = info.status.into();
     if let Some(id) = info.id {
@@ -543,8 +544,9 @@ pub(super) async fn update_npc(req: HttpRequest, info: web::Json<NPC>) -> Result
             .map_err(|err| ErrorInternalServerError(err))?;
         // 追加しなおし
         for v in &info.reward {
+            let lore = html_special_chars_reverce(&re.replace_all(&v.lore, "<br>"));
             let status: [u8; 8] = v.status.into();
-            conn.execute("INSERT INTO reward VALUES(?1,?2,?3,?4,?5,?6,?7)", params![id, v.id, v.category, v.name, v.lore, status, v.skill])
+            conn.execute("INSERT INTO reward VALUES(?1,?2,?3,?4,?5,?6,?7)", params![id, v.id, v.category, v.name, lore, status, v.skill])
                 .map_err(|err| ErrorInternalServerError(err))?;
         }
         Ok(format!("NPC更新 ID{}", id))
@@ -560,8 +562,9 @@ pub(super) async fn update_npc(req: HttpRequest, info: web::Json<NPC>) -> Result
                 .map_err(|err| ErrorInternalServerError(err))?;
         }
         for v in &info.reward {
+            let lore = html_special_chars_reverce(&re.replace_all(&v.lore, "<br>"));
             let status: [u8; 8] = v.status.into();
-            conn.execute("INSERT INTO reward VALUES(?1,?2,?3,?4,?5,?6,?7)", params![id, v.id, v.category, v.name, v.lore, status, v.skill])
+            conn.execute("INSERT INTO reward VALUES(?1,?2,?3,?4,?5,?6,?7)", params![id, v.id, v.category, v.name, lore, status, v.skill])
                 .map_err(|err| ErrorInternalServerError(err))?;
         }
         Ok(format!("NPC追加 ID{}", id))

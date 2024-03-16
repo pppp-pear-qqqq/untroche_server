@@ -385,7 +385,7 @@ struct Character {
 }
 
 #[derive(PartialEq)]
-enum BattleResult {
+pub(super) enum BattleResult {
     Win(usize),
     Draw,
     Escape,
@@ -924,7 +924,7 @@ fn get_side(i: &usize) -> &str {
     }
 }
 
-pub fn battle(eno: [i16; 2]) -> Result<String, String> {
+pub fn battle(eno: [i16; 2]) -> Result<(BattleResult, String), String> {
     // 読み込み・初期化
     let mut battle = Battle::load(eno).map_err(|err|err.to_string())?;
     // 処理開始
@@ -993,5 +993,5 @@ pub fn battle(eno: [i16; 2]) -> Result<String, String> {
     // ログ保存
     battle.save_log()?;
     // 処理終了
-    Ok(serde_json::to_string(&battle.log).map_err(|err| err.to_string())?)
+    Ok((battle.result.unwrap(), serde_json::to_string(&battle.log).map_err(|err| err.to_string())?))
 }

@@ -1197,7 +1197,7 @@ pub(super) async fn receive_battle(req: HttpRequest, info: web::Json<ReceiveBatt
                 // 攻撃者に連絡
                 let handle = actix_rt::spawn(common::send_webhook(info.from, format!("Eno.{} との戦闘が開始しました。", eno)));
                 // 戦闘処理
-                let log = battle::battle([info.from, eno]).map_err(|err| ErrorInternalServerError(err))?;
+                let (_, log) = battle::battle([info.from, eno]).map_err(|err| ErrorInternalServerError(err))?;
                 let _ = handle.await;
                 // 戦闘ログを返す
                 Ok(log)

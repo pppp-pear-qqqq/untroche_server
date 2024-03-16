@@ -436,6 +436,7 @@ function load_npcs(container) {
 			const frame = npc.cloneNode(true);
 			frame.querySelector('.id').innerText = '新規';
 			frame.querySelector('.skills').appendChild(make_element('<button type="button" onclick="add_npc_skill(this)">追加</button>'));
+			frame.querySelector('.rewards').appendChild(make_element('<button type="button" onclick="add_reward(this)">追加</button>'));
 			frame.querySelectorAll('[name]').forEach(elem => elem.addEventListener('change', add_changed));
 			container.appendChild(frame);
 		}

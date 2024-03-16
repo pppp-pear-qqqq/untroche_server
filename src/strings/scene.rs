@@ -312,18 +312,25 @@ fn process_scene(text: &str, conn: &Connection, eno: i16, data: &mut HashMap<Str
                     let get = common::add_fragment(&conn, eno, &fragment)
                         .map_err(|err| ScriptError::RusqliteError(err))?;
                     // 次
-                    Ok(format!("──フラグメント『{}』を入手しました{}", fragment.name, if get {"<br>──所持数制限により破棄されました"} else {""}) + &process_scene(text, conn, eno, data)?)
+                    Ok(format!("──フラグメント『{}』を入手しました{}", fragment.name, if get {""} else {"<br>──所持数制限により破棄されました"}) + &process_scene(text, conn, eno, data)?)
                 }
+                // 指定されたIDのnpcと戦闘を行う
                 "battle" => {
-                    // !battle (id)
-                    // id以外に指定しなきゃいけないことある？　多分ない……
-                    // 指定されたIDのnpcと戦闘を行う
                     // オプションと以降の文字列を取得
                     let (id, text) = part_option(text.trim_start());
+                    // 変数を取得
+                    let (var, text) = part_option(text.trim_start());
                     // idを取得
                     let id = id.parse::<i16>().map_err(|_| ScriptError::parse_error(id, "i16"))?;
                     // 戦闘処理
-                    let log = battle::battle([eno, id * -1]).map_err(|err| ScriptError::CodeError(err))?;
+                    let (result, log) = battle::battle([eno, id * -1]).map_err(|err| ScriptError::CodeError(err))?;
+                    if var != "-" {
+                        data.insert(var.to_string(), match result {
+                            battle::BattleResult::Win(i) => if i == 0 {"win"} else {"lose"},
+                            battle::BattleResult::Draw => "draw",
+                            battle::BattleResult::Escape => "escape",
+                        }.to_string());
+                    }
                     // 次
                     Ok(format!("──戦闘を開始しました\n{}\n", log) + &process_scene(text, conn, eno, data)?)
                 }

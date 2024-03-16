@@ -219,7 +219,7 @@ class Battle {
 							} break;
 							case '対象変更': {
 								actor ^= 1;
-								body = `以降の効果は<span class="special">${battle.character[actor]}</span>を発動者とする`;
+								body = `以降の効果は<span class="special">${battle.character[actor].name}</span>を発動者とする`;
 							} break;
 						}
 						const p = document.createElement('p');
