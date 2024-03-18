@@ -1,5 +1,5 @@
 戦闘を開始します
-!battle 1 select
+!battle 4 select
 !match select{
 	win{
 		勝ったよ！

@@ -356,13 +356,21 @@ pub(super) async fn update_skill(req: HttpRequest, info: web::Json<SkillData>) -
     // 処理開始
     let re = Regex::new("\r|\n|\r\n").map_err(|err| ErrorInternalServerError(err))?;
     let lore = html_special_chars_reverce(&re.replace_all(&info.lore, "<br>").to_string());
-    let mut command: Vec<u8> = Vec::new();
-    for s in info.effect.split(&[' ', ',']) {
-        let c = battle::Command::try_from(s.to_string()).map_err(|err| ErrorBadRequest(err))?;
-        let c = i16::from(c);
-        command.push((c >> 8) as u8);
-        command.push(c as u8);
-    }
+    let command = if battle::Timing::from(info.timing) == battle::Timing::World {
+        let id = info.effect.parse::<i16>()
+            .map_err(|_| ErrorBadRequest("世界観スキルの効果にはIDを指定する"))?;
+        battle::WorldEffect::try_from(id).map_err(|err| ErrorBadRequest(err))?;
+        Vec::from([(id >> 8) as u8, id as u8])
+    } else {
+        let mut command: Vec<u8> = Vec::new();
+        for s in info.effect.split(&[' ', ',']) {
+            let c = battle::Command::try_from(s.to_string()).map_err(|err| ErrorBadRequest(err))?;
+            let c = i16::from(c);
+            command.push((c >> 8) as u8);
+            command.push(c as u8);
+        }
+        command
+    };
     match info.id {
         Some(id) => {
             conn.execute("UPDATE skill SET name=?1,lore=?2,type=?3,effect=?4 WHERE id=?5", params![info.name, lore, info.timing, command, id])
@@ -443,14 +451,15 @@ pub(super) async fn update_players_fragment(req: HttpRequest, info: web::Json<Up
     if info.delete {
         conn.execute("DELETE FROM fragment WHERE eno=?1 AND slot=?2", params![info.eno, info.slot])
             .map_err(|err| ErrorInternalServerError(err))?;
+        Ok(format!("プレイヤーフラグメント削除 Eno.{}({})", info.eno, info.slot))
     } else {
         let status: [u8; 8] = info.status.into();
         conn.execute(
             "UPDATE fragment SET category=?1,status=?2,skill=?3,user=?4 WHERE eno=?5 AND slot=?6",
             params![info.category, status, info.skill, info.user, info.eno, info.slot],
         ).map_err(|err| ErrorInternalServerError(err))?;
+        Ok(format!("プレイヤーフラグメント編集 Eno.{}({})", info.eno, info.slot))
     }
-    Ok(format!("プレイヤーフラグメント編集 Eno.{}({})", info.eno, info.slot))
 }
 
 #[derive(Serialize, Deserialize)]
@@ -491,7 +500,7 @@ pub(super) async fn get_npcs(req: HttpRequest) -> Result<web::Json<Vec<NPC>>, ac
                 id: row.get(0)?,
                 category: row.get(1)?,
                 name: row.get(2)?,
-                lore: row.get(3)?,
+                lore: row.get::<_, String>(3)?.replace("<br>", "\n"),
                 status: row.get::<_, [u8; 8]>(4)?.into(),
                 skill: row.get(5)?,
             })

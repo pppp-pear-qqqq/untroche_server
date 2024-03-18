@@ -372,6 +372,7 @@ function load_npcs(container) {
 			const skill = template.content.querySelector('div.npc_skill');
 			const reward = template.content.querySelector('div.reward');
 			container.replaceChildren();
+			console.log(ret);
 			ret.forEach(f => {
 				const frame = npc.cloneNode(true);
 				frame.querySelector('.id').innerText = f['id'];
@@ -388,12 +389,12 @@ function load_npcs(container) {
 				frame.querySelector('.atk').value = f['status']['atk'];
 				frame.querySelector('.tec').value = f['status']['tec'];
 				const skills = frame.querySelector('.skills');
-				f['skill'].forEach(s => {
+				f['skill'].forEach(v => {
 					const frame = skill.cloneNode(true);
-					frame.querySelector('.skill').value = s[0];
-					frame.querySelector('.skill_name').innerText = get_skill_name(s[0]);
-					frame.querySelector('.name').value = s[1];
-					frame.querySelector('.word').value = s[2];
+					frame.querySelector('.skill').value = v[0];
+					frame.querySelector('.skill_name').innerText = get_skill_name(v[0]);
+					frame.querySelector('.name').value = v[1];
+					frame.querySelector('.word').value = v[2];
 					frame.ondragstart = event => hold_element = event.currentTarget;
 					frame.ondragend = () => hold_element = null;
 					frame.ondragenter = event => {
@@ -421,10 +422,10 @@ function load_npcs(container) {
 					frame.querySelector('.category').value = v['category'];
 					frame.querySelector('.name').value = v['name'];
 					frame.querySelector('.lore').value = v['lore'];
-					frame.querySelector('.hp').value = f['status']['hp'];
-					frame.querySelector('.mp').value = f['status']['mp'];
-					frame.querySelector('.atk').value = f['status']['atk'];
-					frame.querySelector('.tec').value = f['status']['tec'];
+					frame.querySelector('.hp').value = v['status']['hp'];
+					frame.querySelector('.mp').value = v['status']['mp'];
+					frame.querySelector('.atk').value = v['status']['atk'];
+					frame.querySelector('.tec').value = v['status']['tec'];
 					frame.querySelector('.skill').value = v['skill'];
 					frame.querySelector('.skill_name').innerText = get_skill_name(v['skill']);
 					rewards.appendChild(frame);
@@ -468,6 +469,7 @@ function update_npc(form) {
 	const tec = Number(form.querySelector('[name="tec"]').value);
 	let skill = [];
 	form.querySelectorAll('.npc_skill').forEach(form => {
+		console.log(form);
 		let name = form.querySelector('[name="name"]').value;
 		let word = form.querySelector('[name="word"]').value;
 		if (name === '') name = null;
@@ -476,6 +478,7 @@ function update_npc(form) {
 	})
 	let reward = [];
 	form.querySelectorAll('.reward').forEach(form => {
+		console.log(form);
 		const weight = Number(form.querySelector('[name="weight"]').value);
 		const category = form.querySelector('[name="category"]').value;
 		const name = form.querySelector('[name="name"]').value;

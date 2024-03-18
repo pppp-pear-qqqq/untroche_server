@@ -672,7 +672,7 @@ pub(super) async fn update_fragments(req: HttpRequest, info: web::Json<UpdateFra
                         status: row.get(4)?,
                         skill: row.get(5)?,
                         user: row.get(8)?,
-                    },PartFragmentSkill {
+                    }, PartFragmentSkill {
                         skill_name: row.get(6)?,
                         skill_word: row.get(7)?,
                     }))

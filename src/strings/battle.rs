@@ -1,6 +1,6 @@
 use std::{collections::HashMap, num::ParseIntError, ops};
 
-use rand::distributions::{Distribution, WeightedIndex};
+use rand::{distributions::{Distribution, WeightedIndex}, Rng};
 use rusqlite::{params, types::Type, Connection};
 use serde::{Deserialize, Serialize};
 
@@ -306,17 +306,70 @@ impl Serialize for Timing {
     }
 }
 
+#[derive(Clone, PartialEq)]
+pub(super) enum WorldEffect {
+    真剣勝負,
+    永久の夢,
+    逃げるが勝ち,
+    オープンオーバー,
+    騎士団,
+    地獄門,
+    DeepDeepDeep,
+}
+impl WorldEffect {
+    fn convert(blob: Vec<u8>) -> Result<Self, String> {
+        if blob.len() == 2 {
+            Self::try_from((blob[0] as i16) << 8 | blob[1] as i16)
+        } else {
+            Err("blobのサイズが不正です".to_string())
+        }
+    }
+}
+impl TryFrom<i16> for WorldEffect {
+    type Error = String;
+
+    fn try_from(value: i16) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::真剣勝負),
+            1 => Ok(Self::永久の夢),
+            2 => Ok(Self::逃げるが勝ち),
+            3 => Ok(Self::オープンオーバー),
+            4 => Ok(Self::騎士団),
+            5 => Ok(Self::地獄門),
+            6 => Ok(Self::DeepDeepDeep),
+            _ => Err("定義されていない世界観です".to_string()),
+        }
+    }
+}
+impl From<WorldEffect> for String {
+    fn from(value: WorldEffect) -> Self {
+        match value {
+            WorldEffect::真剣勝負 => "勝利条件改変無効 + 報酬削除",
+            WorldEffect::永久の夢 => "全ステータス変動無効",
+            WorldEffect::逃げるが勝ち => "勝利条件改変：逃走成功時勝利",
+            WorldEffect::オープンオーバー => "戦闘開始前全フラグメント開示",
+            WorldEffect::騎士団 => "毎ターン開始時全ステータスランダム化",
+            WorldEffect::地獄門 => "他世界と\"Strings\"世界間での移動可能",
+            WorldEffect::DeepDeepDeep => "戦闘システム改変：より多く移動したものの勝利",
+        }.to_string()
+    }
+}
+#[derive(Clone)]
+enum Effect {
+    Formula(Vec<Command>),
+    World(WorldEffect),
+}
 #[derive(Clone)]
 struct Skill {
     default_name: String,
     name: Option<String>,
     word: Option<String>,
     timing: Timing,
-    formula: Vec<Command>,
+    effect: Effect,
 }
 impl Skill {
-    fn new(default_name: String, name: Option<String>, word: Option<String>, timing: Timing, formula: Vec<Command>) -> Skill {
-        Skill { default_name, name, word, timing, formula }
+    fn new(default_name: String, name: Option<String>, word: Option<String>, timing: Timing, effect: Effect) -> Skill {
+        Skill { default_name, name, word, timing, effect }
     }
 }
 
@@ -379,7 +432,7 @@ struct Character {
     name: String,
     acronym: char,
     color: [u8; 3],
-    word: HashMap<String, String>,
+    word: HashMap<String, Option<String>>,
     status: Status,
     skill: Vec<(Skill, bool)>,
 }
@@ -405,10 +458,7 @@ struct LogCharacter {
     name: String,
     acronym: char,
     color: String,
-    hp: i16,
-    mp: i16,
-    atk: i16,
-    tec: i16,
+    status: Status,
 }
 impl LogCharacter {
     fn new(ch: &Character) -> LogCharacter {
@@ -417,10 +467,7 @@ impl LogCharacter {
             name: ch.name.clone(),
             acronym: ch.acronym,
             color: format!("{:02x}{:02x}{:02x}", ch.color[0], ch.color[1], ch.color[2]),
-            hp: ch.status.hp,
-            mp: ch.status.mp,
-            atk: ch.status.atk,
-            tec: ch.status.tec,
+            status: ch.status,
         }
     }
 }
@@ -430,9 +477,10 @@ struct LogTurn {
     content: Option<String>,
     skill: Option<(String, Option<String>)>,
     action: Option<String>,
+    status: Option<[Status; 2]>,
 }
 impl LogTurn {
-    fn make_string(owner: &str, content: &Option<String>, skill: &Option<String>, skill_default: Option<&String>, action: Option<&String>) -> LogTurn {
+    fn make_string(owner: &str, content: &Option<String>, skill: &Option<String>, skill_default: Option<&String>, action: Option<&String>, status: Option<[&Status; 2]>) -> LogTurn {
         let s0 = skill.to_owned().or(skill_default.cloned());
         let s1 = if skill != &None {
             skill_default
@@ -442,9 +490,10 @@ impl LogTurn {
             content: content.to_owned(),
             skill: s0.map(|x| (x, s1.map(|x| x.to_owned()))),
             action: action.cloned(),
+            status: status.map(|x| [x[0].to_owned(), x[1].to_owned()]),
         }
     }
-    fn make(owner: &str, content: Option<&str>, skill: Option<&str>, skill_default: Option<&str>, action: Option<&str>) -> LogTurn {
+    fn make(owner: &str, content: Option<&str>, skill: Option<&str>, skill_default: Option<&str>, action: Option<&str>, status: Option<[&Status; 2]>) -> LogTurn {
         let s0 = skill.or(skill_default);
         let s1 = if skill != None {
             skill_default
@@ -454,6 +503,7 @@ impl LogTurn {
             content: content.map(|x| x.to_string()),
             skill: s0.map(|x| (x.to_string(), s1.map(|x| x.to_string()))),
             action: action.map(|x| x.to_string()),
+            status: status.map(|x| [x[0].to_owned(), x[1].to_owned()]),
         }
     }
 }
@@ -461,8 +511,7 @@ impl LogTurn {
 struct Log {
     rule: String,
     version: f32,
-    left: LogCharacter,
-    right: LogCharacter,
+    character: [LogCharacter; 2],
     range: i16,
     escape_range: i16,
     result: String,
@@ -474,15 +523,17 @@ struct Battle {
     escape_range: i16,
     result: Option<BattleResult>,
     log: Log,
+    world: Vec<WorldEffect>,
 }
 impl Battle {
-    fn new(ch0: &Character, ch1: &Character, range: i16, escape_range: i16) -> Battle {
+    fn new(ch0: &Character, ch1: &Character, range: i16, escape_range: i16, world: Vec<WorldEffect>) -> Battle {
         Battle {
             character: [ch0.to_owned(), ch1.to_owned()],
             range,
             escape_range,
             result: None,
-            log: Log { rule: SYSTEM.to_string(), version: 0.2, left: LogCharacter::new(ch0), right: LogCharacter::new(ch1), range, escape_range, result: String::new(), turn: vec![] },
+            log: Log { rule: SYSTEM.to_string(), version: 1.0, character: [LogCharacter::new(ch0), LogCharacter::new(ch1)], range, escape_range, result: String::new(), turn: Vec::new() },
+            world,
         }
     }
     fn load(eno: [i16; 2]) -> Result<Battle, rusqlite::Error> {
@@ -490,6 +541,7 @@ impl Battle {
         // 基幹データ取得
         let (range, escape_range): (i16, i16) = conn.query_row("SELECT start_range,start_escape_range FROM gamerule", [], |row|Ok((row.get(0)?, row.get(1)?)))?;
         let mut character = Vec::new();
+        let mut world_effect = Vec::new();
         for eno in eno {
             let ch = if eno > 0 {
                 // プレイヤー
@@ -504,20 +556,40 @@ impl Battle {
                         skill: Vec::new(),
                     })
                 })?;
-                let mut stmt = conn.prepare("WITH f AS (SELECT slot,status,skill,skillname,skillword FROM fragment WHERE eno=?1 AND slot<=10) SELECT f.status,s.name,f.skillname,f.skillword,s.type,s.effect FROM f LEFT OUTER JOIN skill s ON f.skill=s.id ORDER BY f.slot ASC")?;
+                let mut stmt = conn.prepare("WITH f AS (SELECT slot,status,skill,skillname,skillword FROM fragment WHERE eno=?1 AND slot<=10) SELECT f.status,s.name,f.skillname,f.skillword,s.type,s.effect,f.slot FROM f LEFT OUTER JOIN skill s ON f.skill=s.id ORDER BY f.slot ASC")?;
                 let result = stmt.query_map(params![eno], |row| {
                     let skill = if let Some(name) = row.get(1)? {
-                        Some(Skill::new(
-                            name,
-                            row.get(2)?,
-                            row.get(3)?,
-                            Timing::from(row.get::<_, Option<i8>>(4)?.ok_or(rusqlite::Error::InvalidColumnType(4, "skill.type".to_string(), rusqlite::types::Type::Text))?),
-                            Command::convert(
+                        let timing = Timing::from(row.get::<_, Option<i8>>(4)?.ok_or(rusqlite::Error::InvalidColumnType(4, "skill.type".to_string(), rusqlite::types::Type::Null))?);
+                        if timing == Timing::World {
+                            if row.get::<_, i32>(6)? == 1 {
+                                let world = WorldEffect::convert(
+                                    row.get::<_, Option<_>>(5)?
+                                        .ok_or(rusqlite::Error::InvalidColumnType(5, "skill.effect".to_string(), rusqlite::types::Type::Null))?
+                                    ).map_err(|_| rusqlite::Error::InvalidColumnType(5, "skill.effect".to_string(), rusqlite::types::Type::Blob))?;
+                                world_effect.push(world.clone());
+                                Some(Skill::new(
+                                    name,
+                                    row.get(2)?,
+                                    row.get(3)?,
+                                    timing,
+                                    Effect::World(world),
+                                ))
+                            } else {
+                                None
+                            }
+                        } else {
+                            let formula = Command::convert(
                                 row.get::<_, Option<_>>(5)?
-                                    .ok_or(rusqlite::Error::InvalidColumnType(5, "skill.type".to_string(), rusqlite::types::Type::Text))?
-                                ).map_err(|_| rusqlite::Error::InvalidColumnType(5, "skill.effect".to_string(), rusqlite::types::Type::Text)
-                            )?,
-                        ))
+                                    .ok_or(rusqlite::Error::InvalidColumnType(5, "skill.effect".to_string(), rusqlite::types::Type::Null))?
+                                ).map_err(|_| rusqlite::Error::InvalidColumnType(5, "skill.effect".to_string(), rusqlite::types::Type::Blob))?;
+                            Some(Skill::new(
+                                name,
+                                row.get(2)?,
+                                row.get(3)?,
+                                timing,
+                                Effect::Formula(formula),
+                            ))
+                        }
                     } else {
                         None
                     };
@@ -551,22 +623,39 @@ impl Battle {
                 // これは純粋にスキルに対する追加情報だからINNER JOINの方が良い
                 let mut stmt = conn.prepare("SELECT s.name,n.name,n.word,s.type,s.effect FROM npc_skill n INNER JOIN skill s ON n.id=?1 AND n.skill=s.id ORDER BY n.slot ASC")?;
                 character.skill = stmt.query_map(params![-eno], |row| {
-                    Ok((
-                        Skill::new(
-                            row.get(0)?,
-                            row.get(1)?,
-                            row.get(2)?,
-                            Timing::from(row.get::<_, i8>(3)?),
-                            Command::convert(row.get(4)?).map_err(|_| rusqlite::Error::InvalidColumnType(4, "skill.effect".to_string(), rusqlite::types::Type::Text))?,
-                        ),
-                        false,
-                    ))
+                    let timing = Timing::from(row.get::<_, i8>(3)?);
+                    if timing == Timing::World {
+                        let world = WorldEffect::convert(row.get(4)?).map_err(|_| rusqlite::Error::InvalidColumnType(4, "skill.effect".to_string(), rusqlite::types::Type::Blob))?;
+                        world_effect.push(world.clone());
+                        Ok((
+                            Skill::new(
+                                row.get(0)?,
+                                row.get(1)?,
+                                row.get(2)?,
+                                timing,
+                                Effect::World(world),
+                            ),
+                            false,
+                        ))
+                    } else {
+                        let formula = Command::convert(row.get(4)?).map_err(|_| rusqlite::Error::InvalidColumnType(4, "skill.effect".to_string(), rusqlite::types::Type::Blob))?;
+                        Ok((
+                            Skill::new(
+                                row.get(0)?,
+                                row.get(1)?,
+                                row.get(2)?,
+                                timing,
+                                Effect::Formula(formula),
+                            ),
+                            false,
+                        ))
+                    }
                 })?.collect::<Result<Vec<_>, _>>()?;
                 character
             };
             character.push(ch);
         }
-        Ok(Battle::new(&character[0], &character[1], range, escape_range))
+        Ok(Battle::new(&character[0], &character[1], range, escape_range, world_effect))
     }
     fn skill_execute(&mut self, user: usize, timing: Timing) -> Result<bool, String> {
         let once_skill = timing == Timing::Win || timing == Timing::Lose || timing == Timing::Escape;
@@ -578,137 +667,161 @@ impl Battle {
             // タイミングが同一かつ、タイミングが一部のものであれば発動済みでないのを確認
             if self.character[user].skill[i].0.timing == timing && !(once_skill && self.character[user].skill[i].1) {
                 if || -> Option<bool> {
-                    let mut stack = Vec::<i16>::new();
-                    let mut is_complete = false; // スキルが全て完了したかのフラグ
-                    let mut end = false;
-                    let mut u = user;
                     // スキルを実行していく
-                    for f in &self.character[user].skill[i].0.formula {
-                        is_complete = end;
-                        match *f {
-                            Command::Value(value) => { stack.push(value); },
-                            Command::Uhp =>  { stack.push(self.character[u].status.hp); },
-                            Command::Ump =>  { stack.push(self.character[u].status.mp); },
-                            Command::Uatk => { stack.push(self.character[u].status.atk); },
-                            Command::Utec => { stack.push(self.character[u].status.tec); },
-                            Command::Thp =>  { stack.push(self.character[u ^ 1].status.hp); },
-                            Command::Tmp =>  { stack.push(self.character[u ^ 1].status.mp); },
-                            Command::Tatk => { stack.push(self.character[u ^ 1].status.atk); },
-                            Command::Ttec => { stack.push(self.character[u ^ 1].status.tec); },
-                            Command::ValueRange => { stack.push(self.range); },
-                            Command::ValueEscape => { stack.push(self.escape_range); },
-    
-                            Command::Plus => (),
-                            Command::Minus =>  { let v = -stack.pop()?; stack.push(v); },
-                            Command::Add => { let v = stack.pop()? + stack.pop()?; stack.push(v); },
-                            Command::Sub => { let v = stack.pop()? - stack.pop()?; stack.push(v); },
-                            Command::Mul => { let v = stack.pop()? * stack.pop()?; stack.push(v); },
-                            Command::Div => { let v = stack.pop()? / stack.pop()?; stack.push(v); },
-                            Command::Mod => { let v = stack.pop()? % stack.pop()?; stack.push(v); },
-                            Command::RandomRange => { let min = stack.pop()?; let v = rand::random::<u16>() % (stack.pop()? - min) as u16; stack.push(v as i16 + min); },
-    
-                            Command::Cost => {
-                                let v = stack.pop()?;
-                                if self.character[u].status.mp >= v {
-                                    self.character[u].status.mp -= v;
+                    if let Effect::Formula(f) = &self.character[user].skill[i].0.effect {
+                        let mut stack = Vec::<i16>::new();
+                        let mut is_complete = false; // スキルが全て完了したかのフラグ
+                        let mut end = false;
+                        let mut u = user;
+                        for f in f {
+                            is_complete = end;
+                            match f {
+                                Command::Value(value) => { stack.push(*value); },
+                                Command::Uhp =>  { stack.push(self.character[u].status.hp); },
+                                Command::Ump =>  { stack.push(self.character[u].status.mp); },
+                                Command::Uatk => { stack.push(self.character[u].status.atk); },
+                                Command::Utec => { stack.push(self.character[u].status.tec); },
+                                Command::Thp =>  { stack.push(self.character[u ^ 1].status.hp); },
+                                Command::Tmp =>  { stack.push(self.character[u ^ 1].status.mp); },
+                                Command::Tatk => { stack.push(self.character[u ^ 1].status.atk); },
+                                Command::Ttec => { stack.push(self.character[u ^ 1].status.tec); },
+                                Command::ValueRange => { stack.push(self.range); },
+                                Command::ValueEscape => { stack.push(self.escape_range); },
+        
+                                Command::Plus => (),
+                                Command::Minus =>  { let v = -stack.pop()?; stack.push(v); },
+                                Command::Add => { let v = stack.pop()? + stack.pop()?; stack.push(v); },
+                                Command::Sub => { let v = stack.pop()? - stack.pop()?; stack.push(v); },
+                                Command::Mul => { let v = stack.pop()? * stack.pop()?; stack.push(v); },
+                                Command::Div => { let v = stack.pop()? / stack.pop()?; stack.push(v); },
+                                Command::Mod => { let v = stack.pop()? % stack.pop()?; stack.push(v); },
+                                Command::RandomRange => { let min = stack.pop()?; let v = rand::random::<u16>() % (stack.pop()? - min) as u16; stack.push(v as i16 + min); },
+        
+                                Command::Cost => {
+                                    let v = stack.pop()?;
+                                    if self.character[u].status.mp >= v {
+                                        if !self.world.contains(&WorldEffect::永久の夢) {
+                                            self.character[u].status.mp -= v;
+                                        }
+                                        action.push(format!("{} {}", String::from(f.to_owned()), v));
+                                    } else {
+                                        break;
+                                    }
+                                },
+                                Command::Range => {
+                                    if stack.pop()? <= self.range && stack.pop()? >= self.range {
+                                        action.push(format!("{} {}", String::from(f.to_owned()), self.range));
+                                    } else {
+                                        break;
+                                    }
+                                },
+                                Command::ForceCost => {
+                                    let v = stack.pop()?;
+                                    if !self.world.contains(&WorldEffect::永久の夢) {
+                                        self.character[u].status.mp -= v;
+                                        if self.character[u].status.mp < 0 {
+                                            self.character[u].status.hp += self.character[u].status.mp;
+                                        }
+                                    }
                                     action.push(format!("{} {}", String::from(f.to_owned()), v));
-                                } else {
-                                    break;
+                                },
+                                Command::Random => {
+                                    let v = stack.pop()?;
+                                    if v > (rand::random::<u16>() % 100) as i16 {
+                                        action.push(format!("{} {}", String::from(f.to_owned()), v));
+                                    } else {
+                                        break;
+                                    }
                                 }
-                            },
-                            Command::Range => {
-                                if stack.pop()? <= self.range && stack.pop()? >= self.range {
-                                    action.push(format!("{} {}", String::from(f.to_owned()), self.range));
-                                } else {
-                                    break;
-                                }
-                            },
-                            Command::ForceCost => {
-                                let v = stack.pop()?;
-                                self.character[u].status.mp -= v;
-                                if self.character[u].status.mp < 0 {
-                                    self.character[u].status.hp += self.character[u].status.mp;
-                                }
-                                action.push(format!("{} {}", String::from(f.to_owned()), v));
-                            },
-                            Command::Random => {
-                                let v = stack.pop()?;
-                                if v > (rand::random::<u16>() % 100) as i16 {
+                                Command::Break => break,
+                                
+                                Command::Attack => {
+                                    let v = stack.pop()?;
+                                    if !self.world.contains(&WorldEffect::永久の夢) {
+                                        self.character[u ^ 1].status.hp -= v;
+                                    }
+                                    is_attacked = true;
                                     action.push(format!("{} {}", String::from(f.to_owned()), v));
-                                } else {
-                                    break;
-                                }
-                            }
-                            Command::Break => break,
-                            
-                            Command::Attack => {
-                                let v = stack.pop()?;
-                                self.character[u ^ 1].status.hp -= v;
-                                is_attacked = true;
-                                action.push(format!("{} {}", String::from(f.to_owned()), v));
-                            },
-                            Command::ForceAttack => {
-                                let v = stack.pop()?;
-                                self.character[u ^ 1].status.hp -= v;
-                                action.push(format!("{} {}", String::from(f.to_owned()), v));
-                            },
-                            Command::MindAttack => {
-                                let v = stack.pop()?;
-                                self.character[u ^ 1].status.mp -= v;
-                                is_attacked = true;
-                                action.push(format!("{} {}", String::from(f.to_owned()), v));
-                            },
-                            Command::Heal => {
-                                let v = stack.pop()?;
-                                self.character[u].status.hp += v;
-                                action.push(format!("{} {}", String::from(f.to_owned()), v));
-                            },
-                            Command::SelfDamage => {
-                                let v = stack.pop()?;
-                                self.character[u].status.hp -= v;
-                                action.push(format!("{} {}", String::from(f.to_owned()), v));
-                            },
-                            Command::Concentrate => {
-                                let v = stack.pop()?;
-                                self.character[u].status.mp += v;
-                                action.push(format!("{} {}", String::from(f.to_owned()), v));
-                            },
-                            Command::BuffAtk => {
-                                let v = stack.pop()?;
-                                self.character[u].status.atk += v;
-                                action.push(format!("{} {}", String::from(f.to_owned()), v));
-                            },
-                            Command::BuffTec => {
-                                let v = stack.pop()?;
-                                self.character[u].status.tec += v;
-                                action.push(format!("{} {}", String::from(f.to_owned()), v));
-                            },
-                            Command::Move => {
-                                let v = stack.pop()?;
-                                self.range = 0.max(self.range + v);
-                                action.push(format!("{} {}", String::from(f.to_owned()), v));
-                            },
-                            Command::ChangeRange => {
-                                let v = stack.pop()?;
-                                self.range = v;
-                                action.push(format!("{} {}", String::from(f.to_owned()), v));
-                            },
-                            Command::ChangeEscapeRange => {
-                                let v = stack.pop()?;
-                                self.escape_range = v;
-                                action.push(format!("{} {}", String::from(f.to_owned()), v));
-                            },
-                            Command::ChangeUser => {
-                                u = u ^ 1;
-                                action.push(String::from(f.to_owned()));
-                            },
-                            Command::BreakToEnd => {
-                                end = true;
-                            },
-                        };
-                        is_complete = true;
+                                },
+                                Command::ForceAttack => {
+                                    let v = stack.pop()?;
+                                    if !self.world.contains(&WorldEffect::永久の夢) {
+                                        self.character[u ^ 1].status.hp -= v;
+                                    }
+                                    action.push(format!("{} {}", String::from(f.to_owned()), v));
+                                },
+                                Command::MindAttack => {
+                                    let v = stack.pop()?;
+                                    if !self.world.contains(&WorldEffect::永久の夢) {
+                                        self.character[u ^ 1].status.mp -= v;
+                                    }
+                                    is_attacked = true;
+                                    action.push(format!("{} {}", String::from(f.to_owned()), v));
+                                },
+                                Command::Heal => {
+                                    let v = stack.pop()?;
+                                    if !self.world.contains(&WorldEffect::永久の夢) {
+                                        self.character[u].status.hp += v;
+                                    }
+                                    action.push(format!("{} {}", String::from(f.to_owned()), v));
+                                },
+                                Command::SelfDamage => {
+                                    let v = stack.pop()?;
+                                    if !self.world.contains(&WorldEffect::永久の夢) {
+                                        self.character[u].status.hp -= v;
+                                    }
+                                    action.push(format!("{} {}", String::from(f.to_owned()), v));
+                                },
+                                Command::Concentrate => {
+                                    let v = stack.pop()?;
+                                    if !self.world.contains(&WorldEffect::永久の夢) {
+                                        self.character[u].status.mp += v;
+                                    }
+                                    action.push(format!("{} {}", String::from(f.to_owned()), v));
+                                },
+                                Command::BuffAtk => {
+                                    let v = stack.pop()?;
+                                    if !self.world.contains(&WorldEffect::永久の夢) {
+                                        self.character[u].status.atk += v;
+                                    }
+                                    action.push(format!("{} {}", String::from(f.to_owned()), v));
+                                },
+                                Command::BuffTec => {
+                                    let v = stack.pop()?;
+                                    if !self.world.contains(&WorldEffect::永久の夢) {
+                                        self.character[u].status.tec += v;
+                                    }
+                                    action.push(format!("{} {}", String::from(f.to_owned()), v));
+                                },
+                                Command::Move => {
+                                    let v = stack.pop()?;
+                                    self.range = 0.max(self.range + v);
+                                    action.push(format!("{} {}", String::from(f.to_owned()), v));
+                                },
+                                Command::ChangeRange => {
+                                    let v = stack.pop()?;
+                                    self.range = v;
+                                    action.push(format!("{} {}", String::from(f.to_owned()), v));
+                                },
+                                Command::ChangeEscapeRange => {
+                                    let v = stack.pop()?;
+                                    self.escape_range = v;
+                                    action.push(format!("{} {}", String::from(f.to_owned()), v));
+                                },
+                                Command::ChangeUser => {
+                                    u = u ^ 1;
+                                    action.push(String::from(f.to_owned()));
+                                },
+                                Command::BreakToEnd => {
+                                    end = true;
+                                },
+                            };
+                            is_complete = true;
+                        }
+                        Some(is_complete)
+                    } else {
+                        None
                     }
-                    Some(is_complete)
                 }().ok_or("式がおかしいよ")? {
                     // 発動済みフラグを立てる
                     self.character[user].skill[i].1 = true;
@@ -736,6 +849,7 @@ impl Battle {
                 skill,
                 Some(default_name),
                 if action.is_empty() { None } else { Some(&action) },
+                Some([&self.character[0].status, &self.character[1].status]),
             ))
         }
         // 発動したスキルに攻撃が含まれていたら
@@ -746,44 +860,63 @@ impl Battle {
             Ok(skill_id.is_some())
         }
     }
-    fn check_battle_result(&mut self) -> Result<Option<BattleResult>, String> {
+    fn check_battle_result(&mut self, act: usize) -> Result<Option<BattleResult>, String> {
         static CHECK: &str = "<hr>";
         // 戦闘終了判定
-        let death_left = self.character[0].status.hp <= 0;
-        let death_right = self.character[1].status.hp <= 0;
-        if death_left && death_right {
+        let death_act = self.character[act].status.hp <= 0;
+        let death_rec = self.character[act ^ 1].status.hp <= 0;
+        if death_act && death_rec {
             // どちらもHP0以下なら引き分け
-            self.log.turn.push(LogTurn::make(SYSTEM, Some(CHECK), None, None, None));
+            self.log.turn.push(LogTurn::make(SYSTEM, Some(CHECK), None, None, None, None));
             Ok(Some(BattleResult::Draw))
-        } else if death_left || death_right {
+        } else if death_act || death_rec {
             // どちらかがHP0以下なら勝利判定
-            self.log.turn.push(LogTurn::make(SYSTEM, Some(CHECK), None, None, None));
+            self.log.turn.push(LogTurn::make(SYSTEM, Some(CHECK), None, None, None, None));
             // スキル発動フラグ
             let mut is_action = false;
             // 勝者側のインデックスを作成
-            let winer = death_left as usize;
+            let winer = act ^ death_act as usize;
             // 敗北側から先にスキル発動
             is_action |= self.skill_execute(winer ^ 1, Timing::Lose)?;
             is_action |= self.skill_execute(winer, Timing::Win)?;
             if is_action {
                 // どちらかが行動していれば判定をやり直す
-                self.check_battle_result()
+                self.check_battle_result(winer ^ 1)
             } else {
                 // どちらとも行動していなければ終了
-                Ok(Some(BattleResult::Win(winer)))
+                if self.world.contains(&WorldEffect::逃げるが勝ち) {
+                    Ok(Some(BattleResult::Draw))
+                } else {
+                    Ok(Some(BattleResult::Win(winer)))
+                }
             }
         } else if self.range >= self.escape_range {
             // 間合が規定を超えていれば逃走
-            self.log.turn.push(LogTurn::make(SYSTEM, Some(CHECK), None, None, None));
-            Ok(Some(BattleResult::Escape))
+            self.log.turn.push(LogTurn::make(SYSTEM, Some(CHECK), None, None, None, None));
+            // スキル発動フラグ
+            let mut is_action = false;
+            // 被行動側から先にスキル発動
+            is_action |= self.skill_execute(act ^ 1, Timing::Escape)?;
+            is_action |= self.skill_execute(act, Timing::Escape)?;
+            if is_action {
+                // どちらかが行動していれば判定をやり直す
+                self.check_battle_result(act)
+            } else {
+                // どちらとも行動していなければ終了
+                if self.world.contains(&WorldEffect::逃げるが勝ち) {
+                    Ok(Some(BattleResult::Win(act)))
+                } else {
+                    Ok(Some(BattleResult::Escape))
+                }
+            }
         } else {
             Ok(None)
         }
     }
     fn talk(&mut self, i: usize, key: &str) {
-        if let Some(word) = self.character[i].word.get(key) {
+        if let Some(Some(word)) = self.character[i].word.get(key) {
             if word != "" {
-                self.log.turn.push(LogTurn::make(get_side(&i), Some(word), None, None, None))
+                self.log.turn.push(LogTurn::make(get_side(&i), Some(word), None, None, None, None))
             }
         }
     }
@@ -793,9 +926,9 @@ impl Battle {
                 let conn = Connection::open(common::DATABASE).map_err(|err| err.to_string())?;
                 // フラグメント移動
                 if let Some(fragment) = take_fragment(&conn, self.character[i].eno, self.character[i ^ 1].eno).map_err(|err| err.to_string())? {
-                    self.log.turn.push(LogTurn::make_string(SYSTEM, &Some(format!("フラグメント『{}』が奪われました", fragment)), &None, None, None));
+                    self.log.turn.push(LogTurn::make_string(SYSTEM, &Some(format!("フラグメント『{}』が奪われました", fragment)), &None, None, None, None));
                 } else {
-                    self.log.turn.push(LogTurn::make_string(SYSTEM, &Some(format!("{}の所持数限界のため報酬を省略", self.character[i].name)), &None, None, None));
+                    self.log.turn.push(LogTurn::make_string(SYSTEM, &Some(format!("{}の所持数限界のため報酬を省略", self.character[i].name)), &None, None, None, None));
                 }
                 Ok(())
             }
@@ -927,57 +1060,86 @@ fn get_side(i: &usize) -> &str {
 pub fn battle(eno: [i16; 2]) -> Result<(BattleResult, String), String> {
     // 読み込み・初期化
     let mut battle = Battle::load(eno).map_err(|err|err.to_string())?;
+    // 世界観表示
+    for user in 0..battle.character.len() {
+        for i in 0..battle.character[user].skill.len() {
+            if let Effect::World(world) = &battle.character[user].skill[i].0.effect {
+                battle.log.turn.push(LogTurn::make_string(
+                    format!("world-{}", get_side(&user)).as_str(),
+                    &battle.character[user].skill[i].0.word,
+                    &battle.character[user].skill[i].0.name,
+                    Some(&battle.character[user].skill[i].0.default_name),
+                    Some(&String::from(world.to_owned())),
+                    Some([&battle.character[0].status, &battle.character[1].status]),
+                ))
+            }
+        }
+    }
+    // オープン・オーバー処理
+    // あまりにも面倒くさいので省略　後でやる
+    // if battle.world.contains(&WorldEffect::オープンオーバー) {
+    //     let conn = Connection::open(common::DATABASE).map_err(|err| err.to_string())?;
+    // }
     // 処理開始
     // 開始前スキル
     for i in 0..battle.character.len() {
         battle.skill_execute(i, Timing::Start)?;
         // 戦闘終了判定
-        battle.result = battle.check_battle_result()?;
+        battle.result = battle.check_battle_result(i)?;
     }
     // 戦闘開始時台詞
     for i in 0..battle.character.len() {
         battle.talk(i, "start");
     }
     // 戦闘開始ログ
-    battle.log.turn.push(LogTurn::make(SYSTEM, Some("<hr>戦闘開始"), None, None, None));
+    battle.log.turn.push(LogTurn::make(SYSTEM, Some("<hr>戦闘開始"), None, None, None, None));
     // ターン処理
     // もしこの時点で戦闘が終了していればスキップ
     let mut turn = 0;
-    while battle.result == None && turn <= 30 {
+    while battle.result == None && turn < 30 {
         turn += 1;
-        battle.log.turn.push(LogTurn::make(SYSTEM, Some(&format!("<hr>ターン {}", turn)), None, None, None));
+        if battle.world.contains(&WorldEffect::騎士団) {
+            let mut rng = rand::thread_rng();
+            for i in 0..battle.character.len() {
+                battle.character[i].status.hp = rng.gen_range(-256..255);
+                battle.character[i].status.mp = rng.gen_range(-256..255);
+                battle.character[i].status.atk = rng.gen_range(-256..255);
+                battle.character[i].status.tec = rng.gen_range(-256..255);
+            }
+        }
+        battle.log.turn.push(LogTurn::make(SYSTEM, Some(&format!("<hr>ターン {}", turn)), None, None, None, Some([&battle.character[0].status, &battle.character[1].status])));
         for i in 0..battle.character.len() {
             battle.skill_execute(i, Timing::Active)?;
             // 戦闘終了判定
-            battle.result = battle.check_battle_result()?;
+            battle.result = battle.check_battle_result(i)?;
             if battle.result != None {
                 break;
             }
         }
     }
     // 戦闘終了時台詞
-    battle.log.turn.push(LogTurn::make(SYSTEM, Some("戦闘終了"), None, None, None));
+    battle.log.turn.push(LogTurn::make(SYSTEM, Some("戦闘終了"), None, None, None, None));
     match battle.result {
         Some(BattleResult::Win(winer)) => {
             // 勝った方の台詞を先に
             battle.talk(winer, "win");
             battle.talk(winer ^ 1, "lose");
             battle.log.result = get_side(&winer).to_string();
-            battle.log.turn.push(LogTurn::make((battle.log.result.to_owned() + "-").as_str(), Some(&format!("{} の勝利", battle.character[winer].name)), None, None, None));
+            battle.log.turn.push(LogTurn::make((battle.log.result.to_owned() + "-").as_str(), Some(&format!("{} の勝利", battle.character[winer].name)), None, None, None, None));
         },
         Some(BattleResult::Draw) => {
             for i in 0..battle.character.len() {
                 battle.talk(i, "draw");
             }
             battle.log.result = "draw".to_string();
-            battle.log.turn.push(LogTurn::make(SYSTEM, Some("引き分け"), None, None, None));
+            battle.log.turn.push(LogTurn::make(SYSTEM, Some("引き分け"), None, None, None, None));
         },
         Some(BattleResult::Escape) => {
             for i in 0..battle.character.len() {
                 battle.talk(i, "escape");
             }
             battle.log.result = "escape".to_string();
-            battle.log.turn.push(LogTurn::make(SYSTEM, Some("逃走"), None, None, None));
+            battle.log.turn.push(LogTurn::make(SYSTEM, Some("逃走"), None, None, None, None));
         },
         None => {
             battle.result = Some(BattleResult::Draw);
@@ -985,11 +1147,13 @@ pub fn battle(eno: [i16; 2]) -> Result<(BattleResult, String), String> {
                 battle.talk(i, "timeover");
             }
             battle.log.result = "draw".to_string();
-            battle.log.turn.push(LogTurn::make(SYSTEM, Some("引き分け……時間切れ"), None, None, None));
+            battle.log.turn.push(LogTurn::make(SYSTEM, Some("引き分け……時間切れ"), None, None, None, None));
         },
     }
     // 戦利品処理
-    battle.reward()?;
+    if !battle.world.contains(&WorldEffect::真剣勝負) {
+        battle.reward()?;
+    }
     // ログ保存
     battle.save_log()?;
     // 処理終了

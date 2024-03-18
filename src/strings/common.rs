@@ -70,14 +70,12 @@ pub async fn send_webhook(eno: i16, content: String) -> Result<(), String> {
 
 // キャラクターの空きスロットを確認
 pub fn get_empty_slot(conn: &Connection, eno: i16) -> Result<Option<i8>, rusqlite::Error> {
+    conn.query_row("SELECT eno FROM character WHERE eno=?1", params![eno], |_| Ok(()))?;
     let mut stmt = conn
         .prepare("SELECT slot FROM fragment WHERE eno=?1 ORDER BY slot ASC")?;
     let result = stmt
         .query_map(params![eno], |row| Ok(row.get(0)?))?
         .collect::<Result<Vec<i8>, rusqlite::Error>>()?;
-    if result.is_empty() {
-        return Err(rusqlite::Error::QueryReturnedNoRows);
-    }
     let mut i = 1;
     for slot in result {
         if i == slot {
