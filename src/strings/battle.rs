@@ -916,7 +916,7 @@ impl Battle {
     fn talk(&mut self, i: usize, key: &str) {
         if let Some(Some(word)) = self.character[i].word.get(key) {
             if word != "" {
-                self.log.turn.push(LogTurn::make(get_side(&i), Some(word), None, None, None, None))
+                self.log.turn.push(LogTurn::make(format!("{}-", get_side(&i)).as_str(), Some(word), None, None, None, None))
             }
         }
     }
@@ -1081,15 +1081,15 @@ pub fn battle(eno: [i16; 2]) -> Result<(BattleResult, String), String> {
     //     let conn = Connection::open(common::DATABASE).map_err(|err| err.to_string())?;
     // }
     // 処理開始
+    // 戦闘開始時台詞
+    for i in 0..battle.character.len() {
+        battle.talk(i, "start");
+    }
     // 開始前スキル
     for i in 0..battle.character.len() {
         battle.skill_execute(i, Timing::Start)?;
         // 戦闘終了判定
         battle.result = battle.check_battle_result(i)?;
-    }
-    // 戦闘開始時台詞
-    for i in 0..battle.character.len() {
-        battle.talk(i, "start");
     }
     // 戦闘開始ログ
     battle.log.turn.push(LogTurn::make(SYSTEM, Some("<hr>戦闘開始"), None, None, None, None));

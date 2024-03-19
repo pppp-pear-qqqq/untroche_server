@@ -157,13 +157,13 @@ class Battle {
 					}
 				}
 				// 発言内容等
-				if (turn['content'] !== null) {
+				if (turn['content'] !== null && turn['content'] !== undefined) {
 					const p = document.createElement('p');
 					p.innerHTML = turn['content'];
 					div.appendChild(p);
 				}
 				// スキル名
-				if (turn['skill'] !== null) {
+				if (turn['skill'] !== null && turn['skill'] !== undefined) {
 					if (version < 0.2) {
 						const p = document.createElement('p');
 						p.className = 'skill';
@@ -179,7 +179,7 @@ class Battle {
 					}
 				}
 				// スキル効果
-				if (turn['action'] !== null) {
+				if (turn['action'] !== null && turn['action'] !== undefined) {
 					if (world) {
 						const p = document.createElement('p');
 						p.innerHTML = turn['action'];
@@ -286,7 +286,7 @@ class Battle {
 					// 表示更新
 					if (version < 1) battle.update();
 				}
-				if (turn['status'] !== null) {
+				if (turn['status'] !== null && turn['status'] !== undefined) {
 					battle.character[0].status.hp = turn['status'][0]['hp'];
 					battle.character[0].status.mp = turn['status'][0]['mp'];
 					battle.character[0].status.atk = turn['status'][0]['atk'];
