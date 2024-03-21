@@ -774,7 +774,7 @@ impl Battle {
                                 Command::Attack => {
                                     let v = stack.pop()?;
                                     if self.world.contains(&WorldEffect::椿) && self.range > 3 {
-                                        action.push(format!("間合<span class=\"special\">{}<span> ── 攻撃は届かない", self.range));
+                                        action.push("攻撃は届かない".to_string());
                                     } else {
                                         if !self.world.contains(&WorldEffect::永久の夢) {
                                             self.character[u ^ 1].status.hp -= v;
@@ -786,7 +786,7 @@ impl Battle {
                                 Command::ForceAttack => {
                                     let v = stack.pop()?;
                                     if self.world.contains(&WorldEffect::椿) && self.range > 3 {
-                                        action.push(format!("間合<span class=\"special\">{}<span> ── 攻撃は届かない", self.range));
+                                        action.push("攻撃は届かない".to_string());
                                     } else {
                                         if !self.world.contains(&WorldEffect::永久の夢) {
                                             self.character[u ^ 1].status.hp -= v;
@@ -797,7 +797,7 @@ impl Battle {
                                 Command::MindAttack => {
                                     let v = stack.pop()?;
                                     if self.world.contains(&WorldEffect::椿) && self.range > 3 {
-                                        action.push(format!("間合<span class=\"special\">{}<span> ── 攻撃は届かない", self.range));
+                                        action.push("攻撃は届かない".to_string());
                                     } else {
                                         if !self.world.contains(&WorldEffect::永久の夢) {
                                             self.character[u ^ 1].status.mp -= v;
