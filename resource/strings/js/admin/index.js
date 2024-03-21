@@ -87,9 +87,13 @@ function make_fragments_skills(text) {
 }
 function add_players_fragment(text) {
 	const arg = text.split(/\r|\n|\r\n/);
+	let slot = Number(arg[1]);
+	if (slot === 0) slot = null;
+	let skill = Number(arg[4]);
+	if (skill === 0) skill = null;
 	const params = {
 		eno: Number(arg[0]),
-		slot: Number(arg[1]),
+		slot: slot,
 		category: '世界観',
 		name: arg[2],
 		lore: arg[3],
@@ -99,7 +103,7 @@ function add_players_fragment(text) {
 			atk: 0,
 			tec: 0,
 		},
-		skill: Number(arg[4]),
+		skill: skill,
 		user: true,
 	}
 	console.log(params);

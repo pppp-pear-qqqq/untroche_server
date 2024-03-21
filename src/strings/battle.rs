@@ -1027,7 +1027,7 @@ pub fn take_fragment(conn: &Connection, win: i16, lose: i16, limit: i8) -> Resul
         if let Some(slot) = common::get_empty_slot(&conn, win)? {
             if lose > 0 {
                 // 敗北者がプレイヤー
-                let mut stmt = conn.prepare("SELECT slot,category,name FROM fragment WHERE eno=?1 AND slot<=?2")?;
+                let mut stmt = conn.prepare("SELECT slot,category,name FROM fragment WHERE eno=?1 AND slot<=?2 AND category!='世界観'")?;
                 // 候補の取得
                 let result: Vec<(i8, String, String)> = stmt.query_map(params![lose, limit], |row| {
                     Ok((
@@ -1037,19 +1037,23 @@ pub fn take_fragment(conn: &Connection, win: i16, lose: i16, limit: i8) -> Resul
                     ))
                 })?.collect::<Result<_, _>>()?;
                 // 移動対象を決定
-                let buf = &result[rand::random::<usize>() % result.len()];
-                let t = {
-                    if buf.1 == "名前" {
-                        if let Some(doll) = result.iter().find(|&x| x.1 == "身代わり") {
-                            doll
-                        } else {
-                            buf
-                        }
-                    } else { buf }
-                };
-                // フラグメントの移動
-                conn.execute("UPDATE fragment SET eno=?1,slot=?2 WHERE eno=?3 AND slot=?4", params![win, slot, lose, t.0])?;
-                Ok(Some(t.2.to_owned()))
+                if !result.is_empty() {
+                    let buf = &result[rand::random::<usize>() % result.len()];
+                    let t = {
+                        if buf.1 == "名前" {
+                            if let Some(doll) = result.iter().find(|&x| x.1 == "身代わり") {
+                                doll
+                            } else {
+                                buf
+                            }
+                        } else { buf }
+                    };
+                    // フラグメントの移動
+                    conn.execute("UPDATE fragment SET eno=?1,slot=?2 WHERE eno=?3 AND slot=?4", params![win, slot, lose, t.0])?;
+                    Ok(Some(t.2.to_owned()))
+                } else {
+                    Ok(None)
+                }
             } else {
                 // 敗北者がNPC
                 let mut stmt = conn.prepare("SELECT weight,category,name,lore,status,skill FROM reward WHERE npc=?1")?;
@@ -1082,9 +1086,9 @@ pub fn take_fragment(conn: &Connection, win: i16, lose: i16, limit: i8) -> Resul
         }
     } else {
         // 勝利者がNPC
-        let mut stmt = conn.prepare("SELECT slot,category,name FROM fragment WHERE eno=?1 AND slot<=20")?;
+        let mut stmt = conn.prepare("SELECT slot,category,name FROM fragment WHERE eno=?1 AND slot<=?2 AND category!='世界観'")?;
         // 候補の取得
-        let result: Vec<(i8, String, String)> = stmt.query_map(params![lose], |row| {
+        let result: Vec<(i8, String, String)> = stmt.query_map(params![lose, limit], |row| {
             Ok((
                 row.get(0)?,
                 row.get(1)?,
@@ -1092,19 +1096,23 @@ pub fn take_fragment(conn: &Connection, win: i16, lose: i16, limit: i8) -> Resul
             ))
         })?.collect::<Result<_, _>>()?;
         // 移動対象を決定
-        let buf = &result[rand::random::<usize>() % result.len()];
-        let t = {
-            if buf.1 == "名前" {
-                if let Some(doll) = result.iter().find(|&x| x.1 == "身代わり") {
-                    doll
-                } else {
-                    buf
-                }
-            } else { buf }
-        };
-        // フラグメントの削除
-        conn.execute("DELETE FROM fragment WHERE eno=?1 AND slot=?2", params![lose, t.0])?;
-        Ok(Some(t.2.to_owned()))
+        if !result.is_empty() {
+            let buf = &result[rand::random::<usize>() % result.len()];
+            let t = {
+                if buf.1 == "名前" {
+                    if let Some(doll) = result.iter().find(|&x| x.1 == "身代わり") {
+                        doll
+                    } else {
+                        buf
+                    }
+                } else { buf }
+            };
+            // フラグメントの削除
+            conn.execute("DELETE FROM fragment WHERE eno=?1 AND slot=?2", params![lose, t.0])?;
+            Ok(Some(t.2.to_owned()))
+        } else {
+            Ok(None)
+        }
     }
 }
 fn get_side(i: &usize) -> &str {
