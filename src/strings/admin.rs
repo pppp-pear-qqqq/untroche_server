@@ -385,10 +385,10 @@ pub(super) async fn update_skill(req: HttpRequest, info: web::Json<SkillData>) -
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub(super) struct PlayersFragment {
     eno: i16,
-    slot: i8,
+    slot: Option<i8>,
     category: String,
     name: String,
     lore: String,
@@ -577,5 +577,39 @@ pub(super) async fn update_npc(req: HttpRequest, info: web::Json<NPC>) -> Result
                 .map_err(|err| ErrorInternalServerError(err))?;
         }
         Ok(format!("NPC追加 ID{}", id))
+    }
+}
+
+pub(super) async fn add_players_fragment(req: HttpRequest, info: web::Json<PlayersFragment>) -> Result<String, actix_web::Error> {
+    // パスワード取得
+    let password =  req.cookie("admin_password")
+        .ok_or(ErrorForbidden("パスワードが無効です"))?;
+    // データベースに接続
+	let conn = common::open_database()?;
+    // パスワード確認
+    check_server_password(&conn, password.value())?;
+    // 処理開始
+    let re = Regex::new("\r|\n|\r\n").map_err(|err| ErrorInternalServerError(err))?;
+    let lore = html_special_chars_reverce(&re.replace_all(&info.lore, "<br>"));
+    let status: [u8; 8] = info.status.into();
+    if let Some(slot) = info.slot {
+        conn.execute(
+            "UPDATE fragment SET category=?3,name=?4,lore=?5,status=?6,skill=?7 WHERE eno=?1 AND slot=?2",
+                params![info.eno, slot, info.category, info.name, lore, status, info.skill],
+            ).map_err(|err| ErrorInternalServerError(err))?;
+            Ok(format!("フラグメント編集 Eno.{}", info.eno))
+    } else {
+        match common::get_empty_slot(&conn, info.eno).map_err(|err| ErrorInternalServerError(err))? {
+            Some(slot) => {
+                conn.execute(
+                    "INSERT INTO fragment(eno,slot,category,name,lore,status,skill) VALUES(?1,?2,?3,?4,?5,?6,?7)",
+                    params![info.eno, slot, info.category, info.name, lore, status, info.skill],
+                ).map_err(|err| ErrorInternalServerError(err))?;
+                Ok(format!("フラグメント追加 Eno.{}", info.eno))
+            }
+            None => {
+                Err(ErrorBadRequest("対象のスロットに空きがありません"))
+            }
+        }
     }
 }

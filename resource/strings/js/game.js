@@ -192,7 +192,8 @@ function load_fragments(container) {
 						if (f['skill']['word'] !== null && f['skill']['word'] !== '') s.dataset.word = f['skill']['word'];
 						s.dataset.lore = f['skill']['lore'];
 						s.dataset.timing = f['skill']['timing'];
-						s.dataset.effect = f['skill']['effect'].join(' ');
+						if (f['skill']['effect'].Formula !== undefined) s.dataset.effect = f['skill']['effect'].Formula.join(' ');
+						if (f['skill']['effect'].World !== undefined) s.dataset.effect = f['skill']['effect'].World;
 					} else {
 						s.classList.add('none');
 					}
@@ -261,7 +262,7 @@ function load_profile(eno) {
 	ajax.open({
 		url: 'strings/get_profile',
 		ret: 'json',
-		get: {eno: eno},
+		get: {eno: Number(eno)},
 		ok: ret => {
 			const template = document.getElementById('template_profile_fragment');
 			const e = document.querySelector('#profile>div');
@@ -328,11 +329,25 @@ function load_battle_reserve(container) {
 			const template = document.getElementById('template_battle_reserve');
 			load(container, ret, i => {
 				const e = template.content.cloneNode(true);
+				const a = document.createElement('a');
+				const message = e.querySelector('.message');
 				if (i['from'][0] === eno) {
-					e.querySelector('.message').innerHTML = `Eno.${i['to'][0]} ${i['to'][1]} へ戦闘を挑んでいます。`;
+					a.innerText = `Eno.${i['to'][0]} ${i['to'][1]}`;
+					a.onclick = () => {
+						load_profile(i['to'][0]);
+						to_profile();
+					}
+					message.append(a);
+					message.append(' へ戦闘を挑んでいます。');
 					e.querySelector('.option').innerHTML = `<a onclick="cancel_battle(${i['to'][0]});this.closest('.item').remove()">取り下げる</a>`;
 				} else {
-					e.querySelector('.message').innerHTML = `<a onclick="load_profile(${i['from'][0]});to_profile()">Eno.${i['from'][0]} ${i['from'][1]}</a> に戦闘を挑まれています。`;
+					a.innerText = `Eno.${i['from'][0]} ${i['from'][1]}`;
+					a.onclick = () => {
+						load_profile(i['from'][0]);
+						to_profile();
+					}
+					message.append(a);
+					message.append(' に戦闘を挑まれています。');
 					e.querySelector('.option').innerHTML = `<a onclick="to_chat(${i['from'][0]},true)">話し合う</a><a onclick="receive_battle(${i['from'][0]},1);this.closest('.item').remove()">勝つつもりで挑む</a><a onclick="receive_battle(${i['from'][0]},0);this.closest('.item').remove()">負けるつもりで挑む</a><a onclick="receive_battle(${i['from'][0]},255);this.closest('.item').remove()">逃げる</a>`;
 				}
 				return e;
@@ -670,16 +685,12 @@ function open_desc(e) {
 			desc_skill.querySelector('.lore').innerHTML = skill.dataset.lore;
 			desc_skill.querySelector('.timing').innerText = skill.dataset.timing;
 			const effect = desc_skill.querySelector('.effect');
-			switch (fomula_type) {
-				case 0: effect.innerText = make_skillfomula(skill.dataset.effect.split(' ')); break;
-				case 1: effect.innerText = skill.dataset.effect; break;
-			}
-			effect.onclick = event => {
-				fomula_type ^= 1;
-				localStorage.setItem('fomula_type', fomula_type);
+			if (skill.dataset.timing === '世界観') {
+				effect.innerText = skill.dataset.effect;
+			} else {
 				switch (fomula_type) {
-					case 0: event.currentTarget.innerText = make_skillfomula(skill.dataset.effect.split(' ')); break;
-					case 1: event.currentTarget.innerText = skill.dataset.effect; break;
+					case 0: effect.innerText = make_skillfomula(skill.dataset.effect.split(' ')); break;
+					case 1: effect.innerText = skill.dataset.effect; break;
 				}
 			}
 		}
@@ -759,6 +770,10 @@ function update_fragments() {
 			}
 			if (ret['update_error'].length !== 0) {
 				alertify.warning(`『${ret['update_error'].join('』が自動的に破棄されました<br>『')}』が自動的に破棄されました`);
+				complate = false;
+			}
+			if (ret['trash_error'].length !== 0) {
+				alertify.warning(`${ret['trash_error'].join('は破棄できません<br>『')}は破棄できません`);
 				complate = false;
 			}
 			if (complate) alertify.success('フラグメントを更新しました');
@@ -1027,6 +1042,20 @@ window.addEventListener('load', async () => {
 	// 	e.style.height = `${e.scrollHeight}px`;
 	// };
 
+	document.querySelector('#fragment>.desc>.skill>.effect').onclick = event => {
+		if (desc_fragment !== null) {
+			const skill = desc_fragment.querySelector('.skill');
+			if (skill.dataset.timing !== '世界観') {
+				const target = event.currentTarget;
+				fomula_type ^= 1;
+				localStorage.setItem('fomula_type', fomula_type);
+				switch (fomula_type) {
+					case 0: target.innerText = make_skillfomula(skill.dataset.effect.split(' ')); break;
+					case 1: target.innerText = skill.dataset.effect; break;
+				}
+			}
+		}
+	}
 	// フラグメント選択更新機能
 	document.querySelectorAll('#fragment>.desc>.skill>input').forEach(elem => {
 		elem.onchange = event => {

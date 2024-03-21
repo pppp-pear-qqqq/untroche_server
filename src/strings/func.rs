@@ -505,7 +505,7 @@ struct Skill {
     default_name: String,
     lore: String,
     timing: battle::Timing,
-    effect: Vec<battle::Command>,
+    effect: battle::Effect,
 }
 #[derive(Serialize)]
 pub(super) struct Fragment {
@@ -544,14 +544,20 @@ pub(super) async fn get_fragments(req: HttpRequest) -> Result<web::Json<Vec<Frag
             let status: Vec<u8> = row.get(4)?;
             // スキルの有無を判定・整形
             let skill = if let (Some(id), Some(name), Some(lore), Some(timing), Some(effect)) = (row.get(5)?, row.get(9)?, row.get(10)?, row.get::<_, Option<i8>>(11)?, row.get(12)?) {
+                let timing = timing.into();
+                let effect = if timing == battle::Timing::World {
+                    battle::Effect::World(battle::WorldEffect::convert(effect).map_err(|_| rusqlite::Error::InvalidColumnType(12, "skill.effect".to_string(), Type::Blob))?)
+                } else {
+                    battle::Effect::Formula(battle::Command::convert(effect).map_err(|_| rusqlite::Error::InvalidColumnType(12, "skill.effect".to_string(), Type::Blob))?)
+                };
                 Some(Skill {
                     id,
                     name: row.get(6)?,
                     word: row.get(7)?,
                     default_name: name,
                     lore,
-                    timing: battle::Timing::from(timing),
-                    effect: battle::Command::convert(effect).map_err(|_| rusqlite::Error::InvalidColumnType(12, "skill.effect".to_string(), Type::Blob))?,
+                    timing,
+                    effect,
                 })
             } else { None };
             // 取得返却
@@ -602,6 +608,7 @@ struct PartFragmentSkill {
 pub(super) struct ResultUpdateFragments {
     pass_error: Vec<String>,
     update_error: Vec<String>,
+    trash_error: Vec<String>,
 }
 pub(super) async fn update_fragments(req: HttpRequest, info: web::Json<UpdateFragmentsData>) -> Result<Json<ResultUpdateFragments>, actix_web::Error> {
     // ログインセッションを取得
@@ -635,6 +642,8 @@ pub(super) async fn update_fragments(req: HttpRequest, info: web::Json<UpdateFra
         })?.collect::<Result<Vec<_>, _>>()?;
         Ok(result)
     }().map_err(|err| ErrorInternalServerError(err))?;
+    // エラーフラグメントリスト
+    let mut result_update_fragments = ResultUpdateFragments { pass_error: Vec::new(), update_error: Vec::new(), trash_error: Vec::new() };
     // 削除リスト作成
     let mut delete_list = Vec::new();
     let mut kins = 0;
@@ -643,6 +652,10 @@ pub(super) async fn update_fragments(req: HttpRequest, info: web::Json<UpdateFra
         if i.trash == Some(true) {
             // 変更元を取得
             if let Some(f) = result.iter().find(|x| x.slot == i.prev) {
+                if f.category == "世界観" {
+                    result_update_fragments.trash_error.push(f.name.clone());
+                    continue;
+                }
                 // 獲得キンス計算
                 kins += common::calc_fragment_kins(f.status);
             }
@@ -655,7 +668,6 @@ pub(super) async fn update_fragments(req: HttpRequest, info: web::Json<UpdateFra
     // 削除実行
     conn.execute(&sql, params![eno]).map_err(|err| ErrorInternalServerError(err))?;
     // 変更
-    let mut result_update_fragments = ResultUpdateFragments { pass_error: Vec::new(), update_error: Vec::new() };
     let mut append_fragment = Vec::new();
     for i in &info.change {
         // 破棄対象でない場合
@@ -690,18 +702,22 @@ pub(super) async fn update_fragments(req: HttpRequest, info: web::Json<UpdateFra
                 let mut slot = i.next;
                 // passが指定されている場合
                 if let Some(pass) = i.pass {
-                    // 取得者のスロットの空き状況を取得
-                    match common::get_empty_slot(&conn, pass) {
-                        // 空きがある
-                        Ok(Some(s)) => {
-                            // 対象とスロットをそちらに変更
-                            eno = pass;
-                            slot = s;
+                    if f.category == "世界観" {
+                        result_update_fragments.pass_error.push(f.name.clone());
+                    } else {
+                        // 取得者のスロットの空き状況を取得
+                        match common::get_empty_slot(&conn, pass) {
+                            // 空きがある
+                            Ok(Some(s)) => {
+                                // 対象とスロットをそちらに変更
+                                eno = pass;
+                                slot = s;
+                            }
+                            // 空きがない、または対象が存在しない
+                            Ok(None) | Err(rusqlite::Error::QueryReturnedNoRows) => result_update_fragments.pass_error.push(f.name.clone()),
+                            // エラー
+                            Err(err) => return Err(ErrorInternalServerError(err)),
                         }
-                        // 空きがない、または対象が存在しない
-                        Ok(None) | Err(rusqlite::Error::QueryReturnedNoRows) => result_update_fragments.pass_error.push(f.name.clone()),
-                        // エラー
-                        Err(err) => return Err(ErrorInternalServerError(err)),
                     }
                 }
                 // 新しいフラグメントを追加
@@ -821,16 +837,22 @@ pub(super) async fn create_fragment(req: HttpRequest, info: web::Json<CreateFrag
     let mut cost = 70;
     // カテゴリ所持判定
     if info.force != Some(true) {
+        let mut has_category = false;
         for i in &info.material {
             if let Some(f) = result.iter().find(|&x| &x.0 == i) {
+                if f.1 == "世界観" {
+                    return Err(ErrorBadRequest("世界観カテゴリのフラグメントは合成素材にできません"));
+                }
                 // カテゴリ所持
                 if info.category == f.1 {
-                    cost -= 20;
-                    break;
+                    has_category = true;
                 }
             } else {
                 return Err(ErrorBadRequest("所持していないフラグメントを素材にしようとしました"));
             }
+        }
+        if has_category {
+            cost -= 20;
         }
     }
     // 名前一文字につき2
@@ -1207,10 +1229,10 @@ pub(super) async fn receive_battle(req: HttpRequest, info: web::Json<ReceiveBatt
                 let handle = actix_rt::spawn(common::send_webhook(info.from, format!("Eno.{} との戦闘が省略され、{}しました。", eno, if plan != 0 { "勝利" } else { "敗北" })));
                 // フラグメント移動
                 let fragment = if plan == 0 {
-                    battle::take_fragment(&conn, eno, info.from)
+                    battle::take_fragment(&conn, eno, info.from, 20)
                         .map_err(|err| ErrorInternalServerError(err))?
                 } else {
-                    battle::take_fragment(&conn, info.from, eno)
+                    battle::take_fragment(&conn, info.from, eno, 20)
                         .map_err(|err| ErrorInternalServerError(err))?
                 };
                 let _ = handle.await;

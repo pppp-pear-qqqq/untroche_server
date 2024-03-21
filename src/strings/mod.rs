@@ -53,6 +53,7 @@ pub fn config(cfg: &mut web::ServiceConfig) {
 		.route("/admin/update_skill", web::post().to(admin::update_skill))
 		.route("/admin/update_players_fragment", web::post().to(admin::update_players_fragment))
 		.route("/admin/update_npc", web::post().to(admin::update_npc))
+		.route("/admin/add_players_fragment", web::post().to(admin::add_players_fragment))
         .service(Files::new("/", "resource/strings").show_files_listing())
     );
 }

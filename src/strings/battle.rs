@@ -315,9 +315,11 @@ pub(super) enum WorldEffect {
     騎士団,
     地獄門,
     DeepDeepDeep,
+    天縢星喰,
+    椿,
 }
 impl WorldEffect {
-    fn convert(blob: Vec<u8>) -> Result<Self, String> {
+    pub(super) fn convert(blob: Vec<u8>) -> Result<Self, String> {
         if blob.len() == 2 {
             Self::try_from((blob[0] as i16) << 8 | blob[1] as i16)
         } else {
@@ -337,6 +339,8 @@ impl TryFrom<i16> for WorldEffect {
             4 => Ok(Self::騎士団),
             5 => Ok(Self::地獄門),
             6 => Ok(Self::DeepDeepDeep),
+            7 => Ok(Self::天縢星喰),
+            8 => Ok(Self::椿),
             _ => Err("定義されていない世界観です".to_string()),
         }
     }
@@ -351,11 +355,20 @@ impl From<WorldEffect> for String {
             WorldEffect::騎士団 => "毎ターン開始時全ステータスランダム化",
             WorldEffect::地獄門 => "他世界と\"Strings\"世界間での移動可能",
             WorldEffect::DeepDeepDeep => "戦闘システム改変：より多く移動したものの勝利",
+            WorldEffect::天縢星喰 => "全フラグメント使用 + 報酬絶対・極大化",
+            WorldEffect::椿 => "間合3を超える攻撃の無効",
         }.to_string()
     }
 }
-#[derive(Clone)]
-enum Effect {
+impl Serialize for WorldEffect {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer {
+        serializer.serialize_str(&String::from(self.clone()))
+    }
+}
+#[derive(Clone, Serialize)]
+pub(super) enum Effect {
     Formula(Vec<Command>),
     World(WorldEffect),
 }
@@ -380,6 +393,11 @@ pub(super) struct Status {
     atk: i16,
     tec: i16,
 }
+impl Status {
+    fn new() -> Self {
+        Self { hp: 0, mp: 0, atk: 0, tec: 0 }
+    }
+}
 impl From<[u8; 8]> for Status {
     fn from(value: [u8; 8]) -> Self {
         Self {
@@ -398,11 +416,6 @@ impl From<Status> for [u8; 8] {
             (value.atk >> 8) as u8, value.atk as u8,
             (value.tec >> 8) as u8, value.tec as u8,
         ]
-    }
-}
-impl Status {
-    fn new() -> Self {
-        Self { hp: 0, mp: 0, atk: 0, tec: 0 }
     }
 }
 impl ops::AddAssign<Status> for Status {
@@ -542,6 +555,33 @@ impl Battle {
         let (range, escape_range): (i16, i16) = conn.query_row("SELECT start_range,start_escape_range FROM gamerule", [], |row|Ok((row.get(0)?, row.get(1)?)))?;
         let mut character = Vec::new();
         let mut world_effect = Vec::new();
+        // 世界観
+        for eno in eno {
+            let (sql, id) = if eno > 0 {
+                ("SELECT effect,type FROM skill WHERE id=(SELECT skill FROM fragment WHERE eno=?1 AND slot=1)", eno)
+            } else {
+                ("SELECT effect,type FROM skill WHERE id=(SELECT skill FROM npc_skill WHERE id=?1 AND slot=1)", -eno)
+            };
+            let world = conn.query_row(sql, params![id], |row| {
+                let timing = Timing::from(row.get::<_, Option<i8>>(1)?.ok_or(rusqlite::Error::InvalidColumnType(1, "skill.type".to_string(), rusqlite::types::Type::Null))?);
+                if timing == Timing::World {
+                    Ok(Some(
+                        WorldEffect::convert(
+                        row.get::<_, Option<_>>(0)?
+                            .ok_or(rusqlite::Error::InvalidColumnType(0, "skill.effect".to_string(), rusqlite::types::Type::Null))?
+                        ).map_err(|_| rusqlite::Error::InvalidColumnType(0, "skill.effect".to_string(), rusqlite::types::Type::Blob))?
+                    ))
+                } else {
+                    Ok(None)
+                }
+            });
+            match world {
+                Ok(Some(world)) => world_effect.push(world),
+                Ok(None) | Err(rusqlite::Error::QueryReturnedNoRows) => (),
+                Err(err) => return Err(err),
+            }
+        }
+        // スキルとか
         for eno in eno {
             let ch = if eno > 0 {
                 // プレイヤー
@@ -556,27 +596,27 @@ impl Battle {
                         skill: Vec::new(),
                     })
                 })?;
-                let mut stmt = conn.prepare("WITH f AS (SELECT slot,status,skill,skillname,skillword FROM fragment WHERE eno=?1 AND slot<=10) SELECT f.status,s.name,f.skillname,f.skillword,s.type,s.effect,f.slot FROM f LEFT OUTER JOIN skill s ON f.skill=s.id ORDER BY f.slot ASC")?;
+                let sql = if world_effect.contains(&WorldEffect::天縢星喰) {
+                    "WITH f AS (SELECT slot,status,skill,skillname,skillword FROM fragment WHERE eno=?1) SELECT f.status,s.name,f.skillname,f.skillword,s.type,s.effect FROM f LEFT OUTER JOIN skill s ON f.skill=s.id ORDER BY f.slot ASC"
+                } else {
+                    "WITH f AS (SELECT slot,status,skill,skillname,skillword FROM fragment WHERE eno=?1 AND slot<=10) SELECT f.status,s.name,f.skillname,f.skillword,s.type,s.effect FROM f LEFT OUTER JOIN skill s ON f.skill=s.id ORDER BY f.slot ASC"
+                };
+                let mut stmt = conn.prepare(sql)?;
                 let result = stmt.query_map(params![eno], |row| {
                     let skill = if let Some(name) = row.get(1)? {
                         let timing = Timing::from(row.get::<_, Option<i8>>(4)?.ok_or(rusqlite::Error::InvalidColumnType(4, "skill.type".to_string(), rusqlite::types::Type::Null))?);
                         if timing == Timing::World {
-                            if row.get::<_, i32>(6)? == 1 {
-                                let world = WorldEffect::convert(
-                                    row.get::<_, Option<_>>(5)?
-                                        .ok_or(rusqlite::Error::InvalidColumnType(5, "skill.effect".to_string(), rusqlite::types::Type::Null))?
-                                    ).map_err(|_| rusqlite::Error::InvalidColumnType(5, "skill.effect".to_string(), rusqlite::types::Type::Blob))?;
-                                world_effect.push(world.clone());
-                                Some(Skill::new(
-                                    name,
-                                    row.get(2)?,
-                                    row.get(3)?,
-                                    timing,
-                                    Effect::World(world),
-                                ))
-                            } else {
-                                None
-                            }
+                            let world = WorldEffect::convert(
+                                row.get::<_, Option<_>>(5)?
+                                    .ok_or(rusqlite::Error::InvalidColumnType(5, "skill.effect".to_string(), rusqlite::types::Type::Null))?
+                                ).map_err(|_| rusqlite::Error::InvalidColumnType(5, "skill.effect".to_string(), rusqlite::types::Type::Blob))?;
+                            Some(Skill::new(
+                                name,
+                                row.get(2)?,
+                                row.get(3)?,
+                                timing,
+                                Effect::World(world),
+                            ))
                         } else {
                             let formula = Command::convert(
                                 row.get::<_, Option<_>>(5)?
@@ -618,15 +658,11 @@ impl Battle {
                         skill: Vec::new(),
                     })
                 })?;
-                // なんでこれLEFT OUTER JOINなの？ INNER JOINでよくない？
-                // ああ　あっちはフラグメントだったから、スキルが付いてないやつを取得することもあったのか
-                // これは純粋にスキルに対する追加情報だからINNER JOINの方が良い
                 let mut stmt = conn.prepare("SELECT s.name,n.name,n.word,s.type,s.effect FROM npc_skill n INNER JOIN skill s ON n.id=?1 AND n.skill=s.id ORDER BY n.slot ASC")?;
                 character.skill = stmt.query_map(params![-eno], |row| {
                     let timing = Timing::from(row.get::<_, i8>(3)?);
                     if timing == Timing::World {
                         let world = WorldEffect::convert(row.get(4)?).map_err(|_| rusqlite::Error::InvalidColumnType(4, "skill.effect".to_string(), rusqlite::types::Type::Blob))?;
-                        world_effect.push(world.clone());
                         Ok((
                             Skill::new(
                                 row.get(0)?,
@@ -737,26 +773,38 @@ impl Battle {
                                 
                                 Command::Attack => {
                                     let v = stack.pop()?;
-                                    if !self.world.contains(&WorldEffect::永久の夢) {
-                                        self.character[u ^ 1].status.hp -= v;
+                                    if self.world.contains(&WorldEffect::椿) && self.range > 3 {
+                                        action.push(format!("間合<span class=\"special\">{}<span> ── 攻撃は届かない", self.range));
+                                    } else {
+                                        if !self.world.contains(&WorldEffect::永久の夢) {
+                                            self.character[u ^ 1].status.hp -= v;
+                                        }
+                                        is_attacked = true;
+                                        action.push(format!("{} {}", String::from(f.to_owned()), v));
                                     }
-                                    is_attacked = true;
-                                    action.push(format!("{} {}", String::from(f.to_owned()), v));
                                 },
                                 Command::ForceAttack => {
                                     let v = stack.pop()?;
-                                    if !self.world.contains(&WorldEffect::永久の夢) {
-                                        self.character[u ^ 1].status.hp -= v;
+                                    if self.world.contains(&WorldEffect::椿) && self.range > 3 {
+                                        action.push(format!("間合<span class=\"special\">{}<span> ── 攻撃は届かない", self.range));
+                                    } else {
+                                        if !self.world.contains(&WorldEffect::永久の夢) {
+                                            self.character[u ^ 1].status.hp -= v;
+                                        }
+                                        action.push(format!("{} {}", String::from(f.to_owned()), v));
                                     }
-                                    action.push(format!("{} {}", String::from(f.to_owned()), v));
                                 },
                                 Command::MindAttack => {
                                     let v = stack.pop()?;
-                                    if !self.world.contains(&WorldEffect::永久の夢) {
-                                        self.character[u ^ 1].status.mp -= v;
+                                    if self.world.contains(&WorldEffect::椿) && self.range > 3 {
+                                        action.push(format!("間合<span class=\"special\">{}<span> ── 攻撃は届かない", self.range));
+                                    } else {
+                                        if !self.world.contains(&WorldEffect::永久の夢) {
+                                            self.character[u ^ 1].status.mp -= v;
+                                        }
+                                        is_attacked = true;
+                                        action.push(format!("{} {}", String::from(f.to_owned()), v));
                                     }
-                                    is_attacked = true;
-                                    action.push(format!("{} {}", String::from(f.to_owned()), v));
                                 },
                                 Command::Heal => {
                                     let v = stack.pop()?;
@@ -925,10 +973,20 @@ impl Battle {
             Some(BattleResult::Win(i)) => {
                 let conn = Connection::open(common::DATABASE).map_err(|err| err.to_string())?;
                 // フラグメント移動
-                if let Some(fragment) = take_fragment(&conn, self.character[i].eno, self.character[i ^ 1].eno).map_err(|err| err.to_string())? {
-                    self.log.turn.push(LogTurn::make_string(SYSTEM, &Some(format!("フラグメント『{}』が奪われました", fragment)), &None, None, None, None));
+                if self.world.contains(&WorldEffect::天縢星喰) {
+                    loop {
+                        if let Some(fragment) = take_fragment(&conn, self.character[i].eno, self.character[i ^ 1].eno, 30).map_err(|err| err.to_string())? {
+                            self.log.turn.push(LogTurn::make_string(SYSTEM, &Some(format!("フラグメント『{}』が奪われました", fragment)), &None, None, None, None));
+                        } else {
+                            break;
+                        }
+                    }
                 } else {
-                    self.log.turn.push(LogTurn::make_string(SYSTEM, &Some(format!("{}の所持数限界のため報酬を省略", self.character[i].name)), &None, None, None, None));
+                    if let Some(fragment) = take_fragment(&conn, self.character[i].eno, self.character[i ^ 1].eno, 20).map_err(|err| err.to_string())? {
+                        self.log.turn.push(LogTurn::make_string(SYSTEM, &Some(format!("フラグメント『{}』が奪われました", fragment)), &None, None, None, None));
+                    } else {
+                        self.log.turn.push(LogTurn::make_string(SYSTEM, &Some(format!("{}の所持数限界のため報酬を省略", self.character[i].name)), &None, None, None, None));
+                    }
                 }
                 Ok(())
             }
@@ -962,16 +1020,16 @@ impl Battle {
     }
 }
 
-pub fn take_fragment(conn: &Connection, win: i16, lose: i16) -> Result<Option<String>, rusqlite::Error> {
+pub fn take_fragment(conn: &Connection, win: i16, lose: i16, limit: i8) -> Result<Option<String>, rusqlite::Error> {
     // 勝利者がプレイヤー
     if win > 0 {
         // 勝利者のスロットに空きがある場合
         if let Some(slot) = common::get_empty_slot(&conn, win)? {
             if lose > 0 {
                 // 敗北者がプレイヤー
-                let mut stmt = conn.prepare("SELECT slot,category,name FROM fragment WHERE eno=?1 AND slot<=20")?;
+                let mut stmt = conn.prepare("SELECT slot,category,name FROM fragment WHERE eno=?1 AND slot<=?2")?;
                 // 候補の取得
-                let result: Vec<(i8, String, String)> = stmt.query_map(params![lose], |row| {
+                let result: Vec<(i8, String, String)> = stmt.query_map(params![lose, limit], |row| {
                     Ok((
                         row.get(0)?,
                         row.get(1)?,
@@ -1062,16 +1120,18 @@ pub fn battle(eno: [i16; 2]) -> Result<(BattleResult, String), String> {
     let mut battle = Battle::load(eno).map_err(|err|err.to_string())?;
     // 世界観表示
     for user in 0..battle.character.len() {
-        for i in 0..battle.character[user].skill.len() {
-            if let Effect::World(world) = &battle.character[user].skill[i].0.effect {
-                battle.log.turn.push(LogTurn::make_string(
-                    format!("world-{}", get_side(&user)).as_str(),
-                    &battle.character[user].skill[i].0.word,
-                    &battle.character[user].skill[i].0.name,
-                    Some(&battle.character[user].skill[i].0.default_name),
-                    Some(&String::from(world.to_owned())),
-                    Some([&battle.character[0].status, &battle.character[1].status]),
-                ))
+        if let Some(skill) = battle.character[user].skill.get(0) {
+            if let Effect::World(world) = &skill.0.effect {
+                if battle.world.contains(world) {
+                    battle.log.turn.push(LogTurn::make_string(
+                        format!("world-{}", get_side(&user)).as_str(),
+                        &skill.0.word,
+                        &skill.0.name,
+                        Some(&skill.0.default_name),
+                        Some(&String::from(world.to_owned())),
+                        Some([&battle.character[0].status, &battle.character[1].status]),
+                    ))
+                }
             }
         }
     }
@@ -1101,10 +1161,10 @@ pub fn battle(eno: [i16; 2]) -> Result<(BattleResult, String), String> {
         if battle.world.contains(&WorldEffect::騎士団) {
             let mut rng = rand::thread_rng();
             for i in 0..battle.character.len() {
-                battle.character[i].status.hp = rng.gen_range(-256..255);
-                battle.character[i].status.mp = rng.gen_range(-256..255);
-                battle.character[i].status.atk = rng.gen_range(-256..255);
-                battle.character[i].status.tec = rng.gen_range(-256..255);
+                battle.character[i].status.hp = rng.gen_range(0..255);
+                battle.character[i].status.mp = rng.gen_range(0..255);
+                battle.character[i].status.atk = rng.gen_range(0..255);
+                battle.character[i].status.tec = rng.gen_range(0..255);
             }
         }
         battle.log.turn.push(LogTurn::make(SYSTEM, Some(&format!("<hr>ターン {}", turn)), None, None, None, Some([&battle.character[0].status, &battle.character[1].status])));
@@ -1151,7 +1211,7 @@ pub fn battle(eno: [i16; 2]) -> Result<(BattleResult, String), String> {
         },
     }
     // 戦利品処理
-    if !battle.world.contains(&WorldEffect::真剣勝負) {
+    if !battle.world.contains(&WorldEffect::真剣勝負) || battle.world.contains(&WorldEffect::天縢星喰) {
         battle.reward()?;
     }
     // ログ保存

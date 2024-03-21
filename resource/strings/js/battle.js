@@ -148,13 +148,13 @@ class Battle {
 						div.classList.add('p_left');
 						this.background('left');
 						world = true;
-					}
+					} break;
 					case 'world-right' :{
 						actor = 1;
 						div.classList.add('p_right');
 						this.background('right');
 						world = true;
-					}
+					} break;
 				}
 				// 発言内容等
 				if (turn['content'] !== null && turn['content'] !== undefined) {
@@ -189,87 +189,91 @@ class Battle {
 							const a = action.split(' ');
 							let pre = null;
 							let body = null;
-							let value = Number(a[1]);
-							switch (a[0]) {
-								case '消耗': {
-									pre = `${battle.character[actor].name}は構える`
-									body = `MPを<span class="special">${value}</span>消費`;
-									battle.character[actor].status.mp -= value;
-								} break;
-								case '間合': {
-									pre = '間合判定'
-									body = `<span class="special">${value}</span> ── 適正`;
-								} break;
-								case '強命消耗': {
-									pre = `${battle.character[actor].name}は構える`
-									body = `MPを<span class="special">${value}</span>消費`;
-									battle.character[actor].status.mp -= value;
-									const mp = battle.character[actor].status.mp;
-									if (mp < 0) {
-										battle.character[actor].status.hp += mp;
-										body += ` <span class="minus">${-mp}</span>のダメージ`
-									}
-								} break;
-								case '確率': {
-									pre = '確率判定'
-									body = `<span class="special">${value}</span>% ── 成功`;
-								} break;
-								case '攻撃': {
-									pre = `${battle.character[actor ^ 1].name}への攻撃`
-									body = `<span class="minus">${value}</span>のダメージ`;
-									battle.character[actor ^ 1].status.hp -= value;
-								} break;
-								case '貫通攻撃': {
-									pre = `${battle.character[actor ^ 1].name}への攻撃`
-									body = `<span class="minus">${value}</span>のダメージ`;
-									battle.character[actor ^ 1].status.hp -= value;
-								} break;
-								case '精神攻撃': {
-									pre = `${battle.character[actor ^ 1].name}への精神攻撃`
-									body = `MPに<span class="special">${value}</span>のダメージ`;
-									battle.character[actor ^ 1].status.mp -= value;
-								} break;
-								case '回復': {
-									pre = `${battle.character[actor].name}の傷が癒える`
-									body = `<span class="plus">${value}</span>回復した`;
-									battle.character[actor].status.hp += value;
-								} break;
-								case '自傷': {
-									pre = `${battle.character[actor].name}に傷が生まれる`
-									body = `<span class="minus">${value}</span>のダメージ`;
-									battle.character[actor].status.hp -= value;
-								} break;
-								case '集中': {
-									pre = `${battle.character[actor].name}は集中する`
-									body = `MPが<span class="plus">${value}</span>増加`;
-									battle.character[actor].status.mp += value;
-								} break;
-								case 'ATK変化': {
-									pre = `${battle.character[actor].name}の気迫が揺れる`
-									body = `ATKが<span class="special">${value}</span>変化した`;
-									battle.character[actor].status.atk += value;
-								} break;
-								case 'TEC変化': {
-									pre = `${battle.character[actor].name}の目つきが変わる`
-									body = `TECが<span class="special">${value}</span>変化した`;
-									battle.character[actor].status.tec += value;
-								} break;
-								case '移動': {
-									battle.range = Math.max(battle.range + value, 0);
-									body = `<span class="special">${value}</span>移動し、間合が<span class="special">${battle.range}</span>になった`;
-								} break;
-								case '間合変更': {
-									battle.range = value;
-									body = `構え直し、間合が<span class="special">${battle.range}</span>になった`;
-								} break;
-								case '逃走ライン': {
-									battle.escape_range = value;
-									body = `逃走扱いとなる間合が<span class="special">${battle.escape_range}</span>に設定された`;
-								} break;
-								case '対象変更': {
-									actor ^= 1;
-									body = `以降の効果は<span class="special">${battle.character[actor].name}</span>を発動者とする`;
-								} break;
+							if (a.length === 2) {
+								let value = Number(a[1]);
+								switch (a[0]) {
+									case '消耗': {
+										pre = `${battle.character[actor].name}は構える`
+										body = `MPを<span class="special">${value}</span>消費`;
+										battle.character[actor].status.mp -= value;
+									} break;
+									case '間合': {
+										pre = '間合判定'
+										body = `<span class="special">${value}</span> ── 適正`;
+									} break;
+									case '強命消耗': {
+										pre = `${battle.character[actor].name}は構える`
+										body = `MPを<span class="special">${value}</span>消費`;
+										battle.character[actor].status.mp -= value;
+										const mp = battle.character[actor].status.mp;
+										if (mp < 0) {
+											battle.character[actor].status.hp += mp;
+											body += ` <span class="minus">${-mp}</span>のダメージ`
+										}
+									} break;
+									case '確率': {
+										pre = '確率判定'
+										body = `<span class="special">${value}</span>% ── 成功`;
+									} break;
+									case '攻撃': {
+										pre = `${battle.character[actor ^ 1].name}への攻撃`
+										body = `<span class="minus">${value}</span>のダメージ`;
+										battle.character[actor ^ 1].status.hp -= value;
+									} break;
+									case '貫通攻撃': {
+										pre = `${battle.character[actor ^ 1].name}への攻撃`
+										body = `<span class="minus">${value}</span>のダメージ`;
+										battle.character[actor ^ 1].status.hp -= value;
+									} break;
+									case '精神攻撃': {
+										pre = `${battle.character[actor ^ 1].name}への精神攻撃`
+										body = `MPに<span class="special">${value}</span>のダメージ`;
+										battle.character[actor ^ 1].status.mp -= value;
+									} break;
+									case '回復': {
+										pre = `${battle.character[actor].name}の傷が癒える`
+										body = `<span class="plus">${value}</span>回復した`;
+										battle.character[actor].status.hp += value;
+									} break;
+									case '自傷': {
+										pre = `${battle.character[actor].name}に傷が生まれる`
+										body = `<span class="minus">${value}</span>のダメージ`;
+										battle.character[actor].status.hp -= value;
+									} break;
+									case '集中': {
+										pre = `${battle.character[actor].name}は集中する`
+										body = `MPが<span class="plus">${value}</span>増加`;
+										battle.character[actor].status.mp += value;
+									} break;
+									case 'ATK変化': {
+										pre = `${battle.character[actor].name}の気迫が揺れる`
+										body = `ATKが<span class="special">${value}</span>変化した`;
+										battle.character[actor].status.atk += value;
+									} break;
+									case 'TEC変化': {
+										pre = `${battle.character[actor].name}の目つきが変わる`
+										body = `TECが<span class="special">${value}</span>変化した`;
+										battle.character[actor].status.tec += value;
+									} break;
+									case '移動': {
+										battle.range = Math.max(battle.range + value, 0);
+										body = `<span class="special">${value}</span>移動し、間合が<span class="special">${battle.range}</span>になった`;
+									} break;
+									case '間合変更': {
+										battle.range = value;
+										body = `構え直し、間合が<span class="special">${battle.range}</span>になった`;
+									} break;
+									case '逃走ライン': {
+										battle.escape_range = value;
+										body = `逃走扱いとなる間合が<span class="special">${battle.escape_range}</span>に設定された`;
+									} break;
+									case '対象変更': {
+										actor ^= 1;
+										body = `以降の効果は<span class="special">${battle.character[actor].name}</span>を発動者とする`;
+									} break;
+								}
+							} else if(a.length === 1) {
+								body = a[0];
 							}
 							const p = document.createElement('p');
 							if (pre !== null) {

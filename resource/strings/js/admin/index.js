@@ -85,7 +85,33 @@ function make_fragments_skills(text) {
 		}
 	})
 }
-
+function add_players_fragment(text) {
+	const arg = text.split(/\r|\n|\r\n/);
+	const params = {
+		eno: Number(arg[0]),
+		slot: Number(arg[1]),
+		category: '世界観',
+		name: arg[2],
+		lore: arg[3],
+		status: {
+			hp: 0,
+			mp: 0,
+			atk: 0,
+			tec: 0,
+		},
+		skill: Number(arg[4]),
+		user: true,
+	}
+	console.log(params);
+	ajax.open({
+		url: 'admin/add_players_fragment',
+		ret: 'text',
+		post: params,
+		ok: ret => {
+			alertify.success(ret);
+		}
+	})
+}
 function load_characters(container) {
 	ajax.open({
 		url: 'admin/get_characters',
