@@ -77,7 +77,7 @@
 			<div id="explore" class="">
 				<div class="scroll" onclick="explore()">
 					{% if world == "森林の従者" %}
-					<button type="button" style="margin-top: 1em;" onclick="ajax.open({url:'strings/teleport_to_master',ret:'json',ok:ret=>{alertify.success(ret);load_location();}})">主人のもとへ行く</button>
+					<button type="button" style="margin-top: 1em;" onclick="ajax.open({url:'strings/teleport_to_master',ret:'text',ok:ret=>{alertify.success(ret);load_location();}})">主人のもとへ行く</button>
 					{% endif %}
 					<div class="log"></div>
 				</div>

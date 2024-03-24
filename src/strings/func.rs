@@ -1460,17 +1460,21 @@ pub(super) async fn teleport_to_master(req: HttpRequest) -> Result<String, actix
         } else {
             Ok(None)
         }
-    }).map_err(|err| ErrorInternalServerError(err))?;
-    if world == Some(battle::WorldEffect::森林の従者) {
-        // ロケーション名を取得
-        let master = 154;
-        let location: String = conn.query_row("SELECT location FROM character WHERE eno=?1", params![master], |row| Ok(row.get(0)?))
-            .map_err(|err| ErrorInternalServerError(err))?;
-        // 移動
-        conn.execute("UPDATE character SET location=?2 WHERE eno=?1", params![eno, location])
-            .map_err(|err| ErrorInternalServerError(err))?;
-        Ok(format!("{}に移動しました", location))
-    } else {
-        Err(ErrorBadRequest("世界観の効果がありません"))
+    });
+    match world {
+        Ok(Some(battle::WorldEffect::森林の従者)) => {
+            // ロケーション名を取得
+            let master = 154;
+            let location: String = conn.query_row("SELECT location FROM character WHERE eno=?1", params![master], |row| Ok(row.get(0)?))
+                .map_err(|err| ErrorInternalServerError(err))?;
+            // 移動
+            conn.execute("UPDATE character SET location=?2 WHERE eno=?1", params![eno, location])
+                .map_err(|err| ErrorInternalServerError(err))?;
+            Ok(format!("{}に移動しました", location))
+        }
+        Ok(_) | Err(rusqlite::Error::QueryReturnedNoRows) => {
+            Err(ErrorBadRequest("世界観の効果がありません"))
+        }
+        Err(err) => Err(ErrorInternalServerError(err))
     }
 }

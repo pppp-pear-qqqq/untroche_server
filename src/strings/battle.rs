@@ -329,6 +329,7 @@ pub(super) enum WorldEffect {
     Luzifer,
     TheGazer,
     森林の従者,
+    灼け野原,
 }
 impl WorldEffect {
     pub(super) fn convert(blob: Vec<u8>) -> Result<Self, String> {
@@ -365,6 +366,7 @@ impl TryFrom<i16> for WorldEffect {
             18 => Ok(Self::Luzifer),
             19 => Ok(Self::TheGazer),
             20 => Ok(Self::森林の従者),
+            21 => Ok(Self::灼け野原),
             _ => Err("定義されていない世界観です".to_string()),
         }
     }
@@ -393,6 +395,7 @@ impl From<WorldEffect> for String {
             WorldEffect::Luzifer => "消耗3倍",
             WorldEffect::TheGazer => "行動終了時、1/32で[無感]スキルが発動",
             WorldEffect::森林の従者 => "いつでもあなたのお傍に。",
+            WorldEffect::灼け野原 => "スキル発動後機能停止",
         }.to_string()
     }
 }
@@ -919,7 +922,7 @@ impl Battle {
                     }
                 }().ok_or("式がおかしいよ")? {
                     // 発動条件が勝利・敗北・逃走なら使用不可にする
-                    if timing == Timing::Win || timing == Timing::Lose || timing == Timing::Escape {
+                    if timing == Timing::Win || timing == Timing::Lose || timing == Timing::Escape || self.world.contains(&WorldEffect::灼け野原) {
                         self.character[user].skill[i].1 = false;
                     }
                     if self.world.contains(&WorldEffect::忘却の彼方より此岸の原罪へ) {
