@@ -1229,10 +1229,10 @@ pub(super) async fn receive_battle(req: HttpRequest, info: web::Json<ReceiveBatt
                 let handle = actix_rt::spawn(common::send_webhook(info.from, format!("Eno.{} との戦闘が省略され、{}しました。", eno, if plan != 0 { "勝利" } else { "敗北" })));
                 // フラグメント移動
                 let fragment = if plan == 0 {
-                    battle::take_fragment(&conn, eno, info.from, 20)
+                    battle::take_fragment(&conn, eno, info.from, &Vec::new())
                         .map_err(|err| ErrorInternalServerError(err))?
                 } else {
-                    battle::take_fragment(&conn, info.from, eno, 20)
+                    battle::take_fragment(&conn, info.from, eno, &Vec::new())
                         .map_err(|err| ErrorInternalServerError(err))?
                 };
                 let _ = handle.await;
@@ -1428,5 +1428,49 @@ pub(super) async fn get_location(req: HttpRequest, info: web::Query<GetLocationD
         Ok(lore) => Ok(web::Json(Location { name: name.to_string(), lore })),
         Err(rusqlite::Error::QueryReturnedNoRows) => Ok(web::Json(Location { name: name.to_string(), lore: Some("この場所の情報はない。".to_string()) })),
         Err(err) => Err(ErrorInternalServerError(err)),
+    }
+}
+
+pub(super) async fn teleport_to_master(req: HttpRequest) -> Result<String, actix_web::Error> {
+    // ログインセッションを取得
+    let session =  req.cookie("login_session")
+        .ok_or(ErrorBadRequest("ログインセッションがありません"))?;
+    // データベースに接続
+    let conn = common::open_database()?;
+    // サーバーの状態を確認
+    if let Err(state) = common::check_server_state(&conn)? {
+        match state.as_str() {
+            "maintenance" => return Err(ErrorServiceUnavailable(common::SERVER_MAINTENANCE_TEXT)),
+            "end" => return Err(ErrorServiceUnavailable(common::SERVER_END_TEXT)),
+            _ => return Err(ErrorInternalServerError(common::SERVER_UNDEFINED_TEXT))
+        }
+    }
+    // Enoを取得
+    let eno = common::session_to_eno(&conn, session.value())?;
+    // 世界観
+    let world = conn.query_row("SELECT effect,type FROM skill WHERE id=(SELECT skill FROM fragment WHERE eno=?1 AND slot=1)", params![eno], |row| {
+        let timing = battle::Timing::from(row.get::<_, Option<i8>>(1)?.ok_or(rusqlite::Error::InvalidColumnType(1, "skill.type".to_string(), rusqlite::types::Type::Null))?);
+        if timing == battle::Timing::World {
+            Ok(Some(
+                battle::WorldEffect::convert(
+                row.get::<_, Option<_>>(0)?
+                    .ok_or(rusqlite::Error::InvalidColumnType(0, "skill.effect".to_string(), rusqlite::types::Type::Null))?
+                ).map_err(|_| rusqlite::Error::InvalidColumnType(0, "skill.effect".to_string(), rusqlite::types::Type::Blob))?
+            ))
+        } else {
+            Ok(None)
+        }
+    }).map_err(|err| ErrorInternalServerError(err))?;
+    if world == Some(battle::WorldEffect::森林の従者) {
+        // ロケーション名を取得
+        let master = 154;
+        let location: String = conn.query_row("SELECT location FROM character WHERE eno=?1", params![master], |row| Ok(row.get(0)?))
+            .map_err(|err| ErrorInternalServerError(err))?;
+        // 移動
+        conn.execute("UPDATE character SET location=?2 WHERE eno=?1", params![eno, location])
+            .map_err(|err| ErrorInternalServerError(err))?;
+        Ok(format!("{}に移動しました", location))
+    } else {
+        Err(ErrorBadRequest("世界観の効果がありません"))
     }
 }

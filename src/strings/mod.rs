@@ -31,6 +31,7 @@ pub fn config(cfg: &mut web::ServiceConfig) {
 		.route("/send_battle", web::post().to(func::send_battle))
 		.route("/receive_battle", web::post().to(func::receive_battle))
 		.route("/cancel_battle", web::post().to(func::cancel_battle))
+		.route("/teleport_to_master", web::post().to(func::teleport_to_master))
 		.route("/get_location", web::get().to(func::get_location))
 		.route("/get_chat", web::get().to(func::get_chat))
 		.route("/get_characters", web::get().to(func::get_characters))
@@ -109,6 +110,24 @@ async fn index(req: HttpRequest) -> Result<HttpResponse, actix_web::Error> {
             let display: Vec<&str> = if display != "" { display.split('\n').collect() } else { Vec::new() };
             let lore: String = conn.query_row("SELECT lore FROM location WHERE name=?1", params![location], |row| Ok(row.get(0)?))
                 .unwrap_or("この場所の情報はない。".to_string());
+            // 世界観
+            let world = conn.query_row("SELECT effect,type FROM skill WHERE id=(SELECT skill FROM fragment WHERE eno=?1 AND slot=1)", params![eno], |row| {
+                let timing = battle::Timing::from(row.get::<_, Option<i8>>(1)?.ok_or(rusqlite::Error::InvalidColumnType(1, "skill.type".to_string(), rusqlite::types::Type::Null))?);
+                if timing == battle::Timing::World {
+                    Ok(Some(
+                        battle::WorldEffect::convert(
+                        row.get::<_, Option<_>>(0)?
+                            .ok_or(rusqlite::Error::InvalidColumnType(0, "skill.effect".to_string(), rusqlite::types::Type::Null))?
+                        ).map_err(|_| rusqlite::Error::InvalidColumnType(0, "skill.effect".to_string(), rusqlite::types::Type::Blob))?
+                    ))
+                } else {
+                    Ok(None)
+                }
+            }).map_err(|err| ErrorInternalServerError(err))?;
+            let world = match world {
+                Some(battle::WorldEffect::森林の従者) => "森林の従者",
+                _ => "",
+            };
             // 返却
             return || -> Result<HttpResponse, liquid::Error> {
                 Ok(HttpResponse::Ok()
@@ -116,7 +135,7 @@ async fn index(req: HttpRequest) -> Result<HttpResponse, actix_web::Error> {
                         liquid::ParserBuilder::with_stdlib()
                             .build()?
                             .parse(&fs::read_to_string("html/game.html").unwrap())?
-                            .render(&liquid::object!({"eno":eno, "name":name, "color":format!("#{:02x}{:02x}{:02x}", color[0], color[1], color[2]), "location":{"name":location, "lore":lore}, "display":display, "webhook":webhook.unwrap_or(String::new()) }))?
+                            .render(&liquid::object!({"eno":eno, "name":name, "color":format!("#{:02x}{:02x}{:02x}", color[0], color[1], color[2]), "location":{"name":location, "lore":lore}, "display":display, "webhook":webhook.unwrap_or(String::new()), "world":world }))?
                     )
                 )
             }().map_err(|err| ErrorInternalServerError(err));
