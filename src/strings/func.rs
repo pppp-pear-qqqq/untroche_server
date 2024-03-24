@@ -89,7 +89,7 @@ pub(super) async fn register(info: web::Json<RegisterData>) -> Result<String, ac
         // データベースに新規ユーザーを追加
         conn.execute("INSERT INTO user(password) VALUES(?1)", params![hasher.finish() as i64])?;
         let eno = conn.last_insert_rowid() as i16;
-        conn.execute("INSERT INTO character VALUES(?1,?2,?3,?4,?5,?6,?7,?8)", params![eno, info.name, info.acronym, color, "", "門", 0, "{}"])?;
+        conn.execute("INSERT INTO character VALUES(?1,?2,?3,?4,?5,?6,?7,?8,true)", params![eno, info.name, info.acronym, color, "", "門", 0, "{}"])?;
         conn.execute("INSERT INTO character_profile VALUES(?1,'','')", params![eno])?;
         conn.execute("INSERT INTO scene VALUES(?1,'','','{}','')", params![eno])?;
         // フラグメント追加
@@ -139,7 +139,10 @@ pub(super) async fn send_chat(req: HttpRequest, info: web::Json<SendChatData>) -
             }
         }
         // ログインセッションをデータベースと照会
-        let eno = common::session_to_eno(&conn, session.value())?;
+        let (eno, visit) = common::session_to_eno(&conn, session.value())?;
+        if !visit {
+            return Err(ErrorBadRequest("あなたは現在\"Strings\"内にいません"));
+        }
         // 短縮名・発言色・現在地を取得
         let (acronym, color, location): (String, [u8; 3], String) = conn.query_row(
             "SELECT acronym,color,location FROM character WHERE eno=?1",
@@ -181,7 +184,10 @@ pub(super) async fn delete_chat(req: HttpRequest, info: web::Json<DeleteChatData
         }
     }
     // Enoを取得
-    let eno = common::session_to_eno(&conn, session.value())?;
+    let (eno, visit) = common::session_to_eno(&conn, session.value())?;
+    if !visit {
+        return Err(ErrorBadRequest("あなたは現在\"Strings\"内にいません"));
+    }
     // 削除できなかった時にキャッチする方法が特にない
     conn.execute("UPDATE timeline SET live=false WHERE id=?1 AND from_eno=?2", params![info.id, eno])
         .map_err(|err| ErrorInternalServerError(err))?;
@@ -242,7 +248,7 @@ pub(super) async fn get_chat(req: HttpRequest, info: web::Query<GetChatData>) ->
                     Ok(v) => {
                         if v == 0 {
                             match eno {
-                                Some(eno) => {
+                                Some((eno, _)) => {
                                     if x.chars().nth(0) == Some('-') {
                                         Ok(-eno)
                                     } else {
@@ -286,7 +292,7 @@ pub(super) async fn get_chat(req: HttpRequest, info: web::Query<GetChatData>) ->
                     Ok(v) => {
                         if v == 0 {
                             match eno {
-                                Some(eno) => {
+                                Some((eno, _)) => {
                                     if x.chars().nth(0) == Some('-') {
                                         Ok(-eno)
                                     } else {
@@ -344,7 +350,7 @@ pub(super) async fn get_chat(req: HttpRequest, info: web::Query<GetChatData>) ->
         }
         // ロケーションが指定されていない（現在地参照）
         None => {
-            if let Some(_) = eno {
+            if let Some((eno, _)) = eno {
                 Some(conn.query_row("SELECT location FROM character WHERE eno=?1", params![eno], |row|Ok(row.get(0)?))
                     .map_err(|err|ErrorInternalServerError(err))?)
             } else {
@@ -454,7 +460,7 @@ pub(super) async fn get_characters(req: HttpRequest, info: web::Query<GetCharact
         }
         // ロケーションが指定されていない（現在地参照）
         None => {
-            if let Some(_) = eno {
+            if let Some((eno, _)) = eno {
                 Some(conn.query_row("SELECT location FROM character WHERE eno=?1", params![eno], |row|Ok(row.get(0)?))
                     .map_err(|err|ErrorInternalServerError(err))?)
             } else {
@@ -476,7 +482,7 @@ pub(super) async fn get_characters(req: HttpRequest, info: web::Query<GetCharact
         params.push((":start", start));
     }
     let sql = sql.join(" AND ");
-    let sql = "SELECT eno,name,acronym,color,comment,location FROM character".to_string() + if sql != "" { " WHERE " } else { "" } + &sql + " ORDER BY eno ASC LIMIT :num";
+    let sql = "SELECT eno,name,acronym,color,comment,location FROM character WHERE visit=true".to_string() + if sql != "" { " AND " } else { "" } + &sql + " ORDER BY eno ASC LIMIT :num";
     // データベースから取得
     || -> Result<_, rusqlite::Error> {
         let mut stmt = conn.prepare(sql.as_str())?;
@@ -535,7 +541,7 @@ pub(super) async fn get_fragments(req: HttpRequest) -> Result<web::Json<Vec<Frag
         }
     }
     // Enoを取得
-    let eno = common::session_to_eno(&conn, session.value())?;
+    let (eno, _) = common::session_to_eno(&conn, session.value())?;
     // 取得・整形
     || -> Result<_, rusqlite::Error> {
         let mut stmt = conn.prepare("WITH f AS (SELECT slot,category,name,lore,status,skill,skillname,skillword,user FROM fragment WHERE eno=?1) SELECT f.*,s.name,s.lore,s.type,s.effect FROM f LEFT OUTER JOIN skill s ON f.skill=s.id")?;
@@ -625,7 +631,10 @@ pub(super) async fn update_fragments(req: HttpRequest, info: web::Json<UpdateFra
         }
     }
     // Enoを取得
-    let eno = common::session_to_eno(&conn, session.value())?;
+    let (eno, visit) = common::session_to_eno(&conn, session.value())?;
+    if !visit {
+        return Err(ErrorBadRequest("あなたは現在\"Strings\"内にいません"));
+    }
     // フラグメントの一覧を取得
     let result = || -> Result<_, rusqlite::Error> {
         let mut stmt = conn.prepare("SELECT slot,category,name,lore,status,skill,user FROM fragment WHERE eno=?1")?;
@@ -744,7 +753,7 @@ pub(super) async fn update_fragments(req: HttpRequest, info: web::Json<UpdateFra
         if let Some(slot) = common::get_empty_slot(&conn, eno)
             .map_err(|err| ErrorInternalServerError(err))? {
             // 空きに追加
-            conn.execute("INSERT INTO fragment VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)",
+            conn.execute("INSERT INTO fragment VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
                 params![
                     eno,
                     slot,
@@ -819,7 +828,10 @@ pub(super) async fn create_fragment(req: HttpRequest, info: web::Json<CreateFrag
         }
     }
     // Enoを取得
-    let eno = common::session_to_eno(&conn, session.value())?;
+    let (eno, visit) = common::session_to_eno(&conn, session.value())?;
+    if !visit {
+        return Err(ErrorBadRequest("あなたは現在\"Strings\"内にいません"));
+    }
     // 説明文整形
     let lore = common::replace_tag(&common::html_special_chars(&info.lore), eno, false)
         .map_err(|err| ErrorInternalServerError(err))?;
@@ -909,7 +921,7 @@ pub(super) async fn get_has_kins(req: HttpRequest) -> Result<web::Json<i32>, act
         }
     }
     // Enoを取得
-    let eno = common::session_to_eno(&conn, session.value())?;
+    let (eno, _) = common::session_to_eno(&conn, session.value())?;
     // キンス取得
     let kins: i32 = conn.query_row("SELECT kins FROM character WHERE eno=?1", params![eno], |row| Ok(row.get(0)?))
         .map_err(|err| ErrorInternalServerError(err))?;
@@ -998,8 +1010,8 @@ pub(super) async fn get_profile(req: HttpRequest, info: web::Query<GetProfileDat
     // ログインセッションからEnoを取得し、編集モードを有効にするかの確認
     let (edit_mode, name, raw_profile, raw_memo) = if let Some(session) = req.cookie("login_session") {
         // Enoを取得
-        let eno = common::session_to_eno(&conn, session.value())?;
-        if info.eno == eno {
+        let (eno, visit) = common::session_to_eno(&conn, session.value())?;
+        if info.eno == eno && visit {
             (true, Some(name), Some(content), Some(memo))
         } else {
             (false, None, None, None)
@@ -1107,7 +1119,10 @@ pub(super) async fn update_profile(req: HttpRequest, info: web::Json<UpdateProfi
         }
     }
     // Enoを取得
-    let eno = common::session_to_eno(&conn, session.value())?;
+    let (eno, visit) = common::session_to_eno(&conn, session.value())?;
+    if !visit {
+        return Err(ErrorBadRequest("あなたは現在\"Strings\"内にいません"));
+    }
     params.push(&eno);
     // データベースを更新
     conn.execute(sql.as_str(), params.as_slice()).map_err(|err| ErrorInternalServerError(err))?;
@@ -1152,7 +1167,10 @@ pub(super) async fn send_battle(req: HttpRequest, info: web::Json<SendBattleData
         }
     }
     // Enoを取得
-    let eno = common::session_to_eno(&conn, session.value())?;
+    let (eno, visit) = common::session_to_eno(&conn, session.value())?;
+    if !visit {
+        return Err(ErrorBadRequest("あなたは現在\"Strings\"内にいません"));
+    }
     // Enoが指定されたものと同じでないのを確認
     if eno == info.to {
         return Err(ErrorBadRequest("自分とは戦闘できません"));
@@ -1202,7 +1220,10 @@ pub(super) async fn receive_battle(req: HttpRequest, info: web::Json<ReceiveBatt
         }
     }
     // Enoを取得
-    let eno = common::session_to_eno(&conn, session.value())?;
+    let (eno, visit) = common::session_to_eno(&conn, session.value())?;
+    if !visit {
+        return Err(ErrorBadRequest("あなたは現在\"Strings\"内にいません"));
+    }
     // 戦闘の進行を確認
     let plan: u8 = conn.query_row("SELECT plan FROM battle_reserve WHERE from_eno=?1 AND to_eno=?2", params![info.from, eno], |row| Ok(row.get(0)?))
     .map_err(|err| match err {
@@ -1277,7 +1298,7 @@ pub(super) async fn get_battle_reserve(req: HttpRequest) -> Result<web::Json<Vec
         }
     }
     // Enoを取得
-    let eno = common::session_to_eno(&conn, session.value())?;
+    let (eno, _) = common::session_to_eno(&conn, session.value())?;
     // 取得・整形
     let mut stmt = conn.prepare("WITH r AS (SELECT from_eno,to_eno,plan FROM battle_reserve WHERE ?1 IN (from_eno,to_eno)) SELECT r.from_eno,f.name,r.to_eno,t.name,plan FROM r INNER JOIN character f ON r.from_eno=f.eno INNER JOIN character t ON r.to_eno=t.eno")
         .map_err(|err| ErrorInternalServerError(err))?;
@@ -1379,7 +1400,7 @@ pub(super) async fn cancel_battle(req: HttpRequest, info: web::Json<CancelBattle
         }
     }
     // Enoを取得
-    let eno = common::session_to_eno(&conn, session.value())?;
+    let (eno, _) = common::session_to_eno(&conn, session.value())?;
     // 通知
     let handle = actix_rt::spawn(common::send_webhook(info.to, format!("Eno.{} に挑まれていた戦闘が取り下げられました。", eno)));
     // 取得・整形
@@ -1418,7 +1439,7 @@ pub(super) async fn get_location(req: HttpRequest, info: web::Query<GetLocationD
         let session =  req.cookie("login_session")
             .ok_or(ErrorBadRequest("ログインセッションがありません"))?;
         // Enoを取得
-        let eno = common::session_to_eno(&conn, session.value())?;
+        let (eno, _) = common::session_to_eno(&conn, session.value())?;
         // ロケーション名を取得
         conn.query_row("SELECT location FROM character WHERE eno=?1", params![eno], |row| Ok(row.get(0)?))
             .map_err(|err| ErrorInternalServerError(err))?
@@ -1429,6 +1450,30 @@ pub(super) async fn get_location(req: HttpRequest, info: web::Query<GetLocationD
         Err(rusqlite::Error::QueryReturnedNoRows) => Ok(web::Json(Location { name: name.to_string(), lore: Some("この場所の情報はない。".to_string()) })),
         Err(err) => Err(ErrorInternalServerError(err)),
     }
+}
+
+pub(super) async fn delete_character(req: HttpRequest) -> Result<String, actix_web::Error> {
+    // ログインセッションを取得
+    let session =  req.cookie("login_session")
+        .ok_or(ErrorBadRequest("ログインセッションがありません"))?;
+    // データベースに接続
+    let conn = common::open_database()?;
+    // サーバーの状態を確認
+    if let Err(state) = common::check_server_state(&conn)? {
+        match state.as_str() {
+            "maintenance" => return Err(ErrorServiceUnavailable(common::SERVER_MAINTENANCE_TEXT)),
+            "end" => return Err(ErrorServiceUnavailable(common::SERVER_END_TEXT)),
+            _ => return Err(ErrorInternalServerError(common::SERVER_UNDEFINED_TEXT))
+        }
+    }
+    // Enoを取得
+    let (eno, visit) = common::session_to_eno(&conn, session.value())?;
+    if !visit {
+        return Err(ErrorBadRequest("あなたは現在\"Strings\"内にいません"));
+    }
+    conn.execute("UPDATE character SET visit=false WHERE eno=?1", params![eno])
+        .map_err(|err| ErrorInternalServerError(err))?;
+    Ok(String::new())
 }
 
 pub(super) async fn teleport_to_master(req: HttpRequest) -> Result<String, actix_web::Error> {
@@ -1446,7 +1491,10 @@ pub(super) async fn teleport_to_master(req: HttpRequest) -> Result<String, actix
         }
     }
     // Enoを取得
-    let eno = common::session_to_eno(&conn, session.value())?;
+    let (eno, visit) = common::session_to_eno(&conn, session.value())?;
+    if !visit {
+        return Err(ErrorBadRequest("あなたは現在\"Strings\"内にいません"));
+    }
     // 世界観
     let world = conn.query_row("SELECT effect,type FROM skill WHERE id=(SELECT skill FROM fragment WHERE eno=?1 AND slot=1)", params![eno], |row| {
         let timing = battle::Timing::from(row.get::<_, Option<i8>>(1)?.ok_or(rusqlite::Error::InvalidColumnType(1, "skill.type".to_string(), rusqlite::types::Type::Null))?);

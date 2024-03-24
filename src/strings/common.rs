@@ -39,15 +39,12 @@ pub fn check_server_state(conn: &Connection) -> Result<Result<(), String>, actix
 }
 
 // ログインセッションを確認し、enoを返却する
-pub fn session_to_eno(conn: &Connection, session: &str) -> Result<i16, actix_web::Error> {
+pub fn session_to_eno(conn: &Connection, session: &str) -> Result<(i16, bool), actix_web::Error> {
     let session = session.parse::<i128>().map_err(|err| ErrorBadRequest(err))?;
-    match conn.prepare("SELECT eno FROM login_session WHERE id=?1") {
-        Ok(mut stmt) => match stmt.query_row(&[&session], |row| Ok(row.get(0)?)) {
-            Ok(eno) => Ok(eno),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Err(ErrorBadRequest("ログインセッションが無効です")),
-            Err(err) => Err(ErrorInternalServerError(err))
-        },
-        Err(err) => Err(ErrorInternalServerError(err)),
+    match conn.query_row("SELECT eno,visit FROM character WHERE eno=(SELECT eno FROM login_session WHERE id=?1)", params![session], |row| Ok((row.get(0)?, row.get(1)?))) {
+        Ok(data) => Ok(data),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Err(ErrorBadRequest("ログインセッションが無効です")),
+        Err(err) => Err(ErrorInternalServerError(err))
     }
 }
 

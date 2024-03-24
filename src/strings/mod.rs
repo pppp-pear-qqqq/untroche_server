@@ -31,6 +31,7 @@ pub fn config(cfg: &mut web::ServiceConfig) {
 		.route("/send_battle", web::post().to(func::send_battle))
 		.route("/receive_battle", web::post().to(func::receive_battle))
 		.route("/cancel_battle", web::post().to(func::cancel_battle))
+		.route("/delete_character", web::post().to(func::delete_character))
 		.route("/teleport_to_master", web::post().to(func::teleport_to_master))
 		.route("/get_location", web::get().to(func::get_location))
 		.route("/get_chat", web::get().to(func::get_chat))
@@ -96,7 +97,7 @@ async fn index(req: HttpRequest) -> Result<HttpResponse, actix_web::Error> {
     // Cookieに保存されているログインセッションを取得
     if let Some(session) = req.cookie("login_session") {
         // ログインセッションをデータベースと照会
-        if let Ok(eno) = common::session_to_eno(&conn, session.value()) {
+        if let Ok((eno, visit)) = common::session_to_eno(&conn, session.value()) {
             // ログインセッションのタイムスタンプを更新
             conn.execute("UPDATE login_session SET timestamp=CURRENT_TIMESTAMP WHERE id=?1", params![session.value()])
                 .map_err(|err| ErrorInternalServerError(err))?;
@@ -136,7 +137,7 @@ async fn index(req: HttpRequest) -> Result<HttpResponse, actix_web::Error> {
                         liquid::ParserBuilder::with_stdlib()
                             .build()?
                             .parse(&fs::read_to_string("html/game.html").unwrap())?
-                            .render(&liquid::object!({"eno":eno, "name":name, "color":format!("#{:02x}{:02x}{:02x}", color[0], color[1], color[2]), "location":{"name":location, "lore":lore}, "display":display, "webhook":webhook.unwrap_or(String::new()), "world":world }))?
+                            .render(&liquid::object!({"eno":eno, "name":name, "color":format!("#{:02x}{:02x}{:02x}", color[0], color[1], color[2]), "location":{"name":location, "lore":lore}, "display":display, "webhook":webhook.unwrap_or(String::new()), "world":world, "visit":visit }))?
                     )
                 )
             }().map_err(|err| ErrorInternalServerError(err));

@@ -42,7 +42,10 @@ pub async fn next(req: HttpRequest, info: web::Json<NextData>) -> Result<String,
         }
     }
     // Enoを取得
-    let eno = common::session_to_eno(&conn, session.value())?;
+    let (eno, visit) = common::session_to_eno(&conn, session.value())?;
+    if !visit {
+        return Err(ErrorBadRequest("あなたは現在\"Strings\"内にいません"));
+    }
     // シーン情報取得
     let scene = conn.query_row(
         "SELECT buffer,data,data_key FROM scene WHERE eno=?1",

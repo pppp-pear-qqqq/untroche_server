@@ -989,6 +989,25 @@ function close_battle() {
 	battle.close();
 }
 
+function delete_character() {
+	alertify.prompt(
+		'これを実行すると、あなたのキャラクターが"Strings"から帰還し、システム的には削除されることになります。<br><br>キャラクター削除状態では、発言の閲覧などの一部操作を除き操作不能になり、またキャラクターリストから除外され表示されなくなります。<br><br>一度削除したキャラクターを元に戻すことはできません。<br><br>本当に削除する場合は、下の入力ボックスに「削除する」と記入しOKを押してください。',
+		'',
+		(_, value) => {
+			if (value === '削除する') {
+				ajax.open({
+					url: 'strings/delete_character',
+					ret: 'text',
+					post: {},
+					ok: () => alertify.success('削除されました', undefined, () => location.reload()),
+				})
+			} else {
+				alertify.warning('入力が異なります');
+			}
+		},
+	)
+}
+
 window.addEventListener('load', async () => {
 	// ========================
 	// 機能の設定
