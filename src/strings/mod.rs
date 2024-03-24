@@ -123,10 +123,11 @@ async fn index(req: HttpRequest) -> Result<HttpResponse, actix_web::Error> {
                 } else {
                     Ok(None)
                 }
-            }).map_err(|err| ErrorInternalServerError(err))?;
+            });
             let world = match world {
-                Some(battle::WorldEffect::森林の従者) => "森林の従者",
-                _ => "",
+                Ok(Some(battle::WorldEffect::森林の従者)) => "森林の従者",
+                Ok(_) | Err(rusqlite::Error::QueryReturnedNoRows) => "",
+                Err(err) => return Err(ErrorInternalServerError(err)),
             };
             // 返却
             return || -> Result<HttpResponse, liquid::Error> {
