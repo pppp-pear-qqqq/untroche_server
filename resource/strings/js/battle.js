@@ -96,6 +96,7 @@ class Battle {
 	}
 	async close() {
 		this.display.classList.add('hide');
+		this.display.classList.remove('manaita');
 		this.display.style.background = '#404040';
 		this.elem_log.replaceChildren();
 		if (this.auto !== null) {
@@ -147,6 +148,9 @@ class Battle {
 						actor = 0;
 						div.classList.add('p_left');
 						this.background('left');
+						if (turn['action'] === '回復(x),集中(x),ATK変化(x),TEC変化(x)のスキルを末尾に追加<br>xの値は「むねがちいさい」フラグメント所持数により決定') {
+							this.display.classList.add('manaita');
+						}
 						world = true;
 					} break;
 					case 'world-right' :{

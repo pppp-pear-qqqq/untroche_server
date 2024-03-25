@@ -834,3 +834,12 @@
 		justify-content: space-between;
 	}
 }
+#play_battle.manaita::before{
+	content: '';
+	width: 100%;
+	height: 100%;
+	background-image: url('../pic/manaita.jpg');
+	background-size: cover;
+	transform: none;
+	opacity: 0.3;
+}

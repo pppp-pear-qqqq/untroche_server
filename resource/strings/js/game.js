@@ -686,7 +686,7 @@ function open_desc(e) {
 			desc_skill.querySelector('.timing').innerText = skill.dataset.timing;
 			const effect = desc_skill.querySelector('.effect');
 			if (skill.dataset.timing === '世界観') {
-				effect.innerText = skill.dataset.effect;
+				effect.innerHTML = skill.dataset.effect;
 			} else {
 				switch (fomula_type) {
 					case 0: effect.innerText = make_skillfomula(skill.dataset.effect.split(' ')); break;
