@@ -36,6 +36,20 @@ class Character {
 		else this.displays[1].firstElementChild.style.width = 'calc(100%)';
 	}
 };
+/**
+ * 
+ * @param {string} text 
+ * @param {number} chance 
+ */
+function hide_text(text, chance) {
+	if (!chance) chance = 0;
+	for (let i = 0; i < text.length; ++i) {
+		if (Math.random() < chance && /[^a-zA-Z<>"'=/ ─]/.test(text[i])) {
+			text = `${text.substring(0, i)}█${text.substring(i + 1)}`;
+		}
+	}
+	return text;
+}
 class Battle {
 	constructor(raw) {
 		console.log(raw);
@@ -96,7 +110,7 @@ class Battle {
 	}
 	async close() {
 		this.display.classList.add('hide');
-		this.display.classList.remove('manaita');
+		this.display.classList.remove('manaita', 'rainbow');
 		this.display.style.background = '#404040';
 		this.elem_log.replaceChildren();
 		if (this.auto !== null) {
@@ -131,7 +145,7 @@ class Battle {
 						div.classList.add('p_left');
 						if ((version < 1 && battle.log[battle.now] !== undefined) || turn['owner'].slice(-1) !== '-') {
 							const p = document.createElement('p');
-							p.innerText = `${battle.character[actor].name}の行動`;
+							p.innerText = hide_text(`${battle.character[actor].name}の行動`, this.text_hide);
 							div.appendChild(p);
 						}
 					} break;
@@ -140,7 +154,7 @@ class Battle {
 						div.classList.add('p_right');
 						if ((version < 1 && battle.log[battle.now] !== undefined) || turn['owner'].slice(-1) !== '-') {
 							const p = document.createElement('p');
-							p.innerText = `${battle.character[actor].name}の行動`;
+							p.innerText = hide_text(`${battle.character[actor].name}の行動`, this.text_hide);
 							div.appendChild(p);
 						}
 					} break;
@@ -150,6 +164,10 @@ class Battle {
 						this.background('left');
 						if (turn['action'] === '回復(x),集中(x),ATK変化(x),TEC変化(x)のスキルを末尾に追加<br>xの値は「むねがちいさい」フラグメント所持数により決定') {
 							this.display.classList.add('manaita');
+						} else if (turn['action'] === '████████') {
+							this.text_hide = 0;
+						} else if (turn['action'] === '間合条件無効化 + 虹霓') {
+							this.elem_log.classList.add('rainbow');
 						}
 						world = true;
 					} break;
@@ -157,13 +175,21 @@ class Battle {
 						actor = 1;
 						div.classList.add('p_right');
 						this.background('right');
+						if (turn['action'] === '回復(x),集中(x),ATK変化(x),TEC変化(x)のスキルを末尾に追加<br>xの値は「むねがちいさい」フラグメント所持数により決定') {
+							this.display.classList.add('manaita');
+						} else if (turn['action'] === '████████') {
+							console.log('world activate');
+							this.text_hide = 0;
+						} else if (turn['action'] === '間合条件無効化 + 虹霓') {
+							this.elem_log.classList.add('rainbow');
+						}
 						world = true;
 					} break;
 				}
 				// 発言内容等
 				if (turn['content'] !== null && turn['content'] !== undefined) {
 					const p = document.createElement('p');
-					p.innerHTML = turn['content'];
+					p.innerHTML = hide_text(turn['content'], this.text_hide);
 					div.appendChild(p);
 				}
 				// スキル名
@@ -171,14 +197,14 @@ class Battle {
 					if (version < 0.2) {
 						const p = document.createElement('p');
 						p.className = 'skill';
-						p.innerHTML = turn['skill'];
+						p.innerHTML = hide_text(turn['skill'], this.text_hide);
 						div.appendChild(p);
 					} else {
 						const p = document.createElement('p');
 						p.className = 'skill';
-						p.innerHTML = turn['skill'][0];
+						p.innerHTML = hide_text(turn['skill'][0], this.text_hide);
 						if (turn['skill'][1] !== null)
-							p.innerHTML += `<span class="tip">(${turn['skill'][1]})<span>`;
+							p.innerHTML += `<span class="tip">(${hide_text(turn['skill'][1], this.text_hide)})<span>`;
 						div.appendChild(p);
 					}
 				}
@@ -281,11 +307,11 @@ class Battle {
 							const p = document.createElement('p');
 							if (pre !== null) {
 								const span = document.createElement('span');
-								span.innerText = pre;
+								span.innerText = hide_text(pre, this.text_hide);
 								p.appendChild(span);
 							}
 							const span = document.createElement('span');
-							span.innerHTML = body;
+							span.innerHTML = hide_text(body, this.text_hide);
 							p.appendChild(span);
 							div.appendChild(p);
 						});
@@ -305,6 +331,10 @@ class Battle {
 					battle.update();
 				}
 				battle.elem_log.appendChild(div);
+				if (this.text_hide !== undefined) {
+					this.text_hide = (battle.now - 8) / 128;
+					console.log(this.text_hide);
+				}
 				return false;
 			}
 		}

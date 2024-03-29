@@ -231,6 +231,9 @@ function load_fragments(container) {
 							reload_material();
 						} else open_desc(event.currentTarget);
 					};
+					e.ondblclick = event => {
+						if (!create_mode) event.currentTarget.classList.toggle('trash');
+					}
 					e.ontouchmove = event => {
 						event.preventDefault();
 						for (let i = 0; i < event.changedTouches.length; ++i) {
@@ -797,7 +800,7 @@ function change_create_mode() {
 		tab.classList.remove('active');
 		update.onclick = update_fragments;
 		update.innerText = '更新';
-		fragments.querySelectorAll('.material').forEach(elem => elem.classList.remove('material'));
+		fragments.querySelectorAll('.material,.base_material').forEach(elem => elem.classList.remove('material','base_material'));
 	}
 }
 function reload_material() {

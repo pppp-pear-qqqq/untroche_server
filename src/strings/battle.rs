@@ -1,4 +1,4 @@
-use std::{collections::HashMap, num::ParseIntError, ops};
+use std::{collections::HashMap, mem, num::ParseIntError, ops};
 
 use rand::{distributions::{Distribution, WeightedIndex}, seq::IteratorRandom, Rng};
 use rusqlite::{params, types::Type, Connection};
@@ -338,6 +338,14 @@ pub(super) enum WorldEffect {
     青い星の棺,
     幸福な灰かぶり,
     彼誰時,
+    飢えず満ちず,
+    UnidentifiedWorld,
+    解呪の部屋,
+    狡猾なるすり替え,
+    興味本位の竜起こし,
+    暴食の呪い,
+    双眸虹霓,
+    天上の風,
 }
 impl WorldEffect {
     pub(super) fn convert(blob: Vec<u8>) -> Result<Self, String> {
@@ -383,6 +391,14 @@ impl TryFrom<i16> for WorldEffect {
             27 => Ok(Self::青い星の棺),
             28 => Ok(Self::幸福な灰かぶり),
             29 => Ok(Self::彼誰時),
+            30 => Ok(Self::飢えず満ちず),
+            31 => Ok(Self::UnidentifiedWorld),
+            32 => Ok(Self::解呪の部屋),
+            33 => Ok(Self::狡猾なるすり替え),
+            34 => Ok(Self::興味本位の竜起こし),
+            35 => Ok(Self::暴食の呪い),
+            36 => Ok(Self::双眸虹霓),
+            37 => Ok(Self::天上の風),
             _ => Err("定義されていない世界観です".to_string()),
         }
     }
@@ -419,7 +435,15 @@ impl From<WorldEffect> for String {
             WorldEffect::思考試行施行 => "世界観無効 + [通常]スキル発動失敗時 HP=0",
             WorldEffect::青い星の棺 => "HPが回復する際ダメージに反転",
             WorldEffect::幸福な灰かぶり => "HP,MP 3倍 + 移動距離 2倍",
-            WorldEffect::彼誰時 => "毎ターン開始時間合ランダム変更",
+            WorldEffect::彼誰時 => "毎ターン開始時間合ランダム変化",
+            WorldEffect::飢えず満ちず => "戦闘報酬削除",
+            WorldEffect::UnidentifiedWorld => "████████",
+            WorldEffect::解呪の部屋 => "戦闘開始時HP-MP入れ替え<br>世界観『思考・試行・施行』により無効化されない",
+            WorldEffect::狡猾なるすり替え => "戦闘の勝敗逆転",
+            WorldEffect::興味本位の竜起こし => "世界観『永久の夢』無効化 + [反応]を[無感]に変更",
+            WorldEffect::暴食の呪い => "[敗北]回復(相手HP)のスキルを先頭に追加　このスキルの発動条件は改変されない",
+            WorldEffect::双眸虹霓 => "間合条件無効化 + 虹霓",
+            WorldEffect::天上の風 => "相手行動終了時、受ダメージ分回復 + 間合ランダム変化",
         }.to_string()
     }
 }
@@ -608,7 +632,10 @@ trait CheckWorld {
 impl CheckWorld for Vec<WorldEffect> {
     fn check(&self, world: WorldEffect) -> bool {
         if world != WorldEffect::思考試行施行 && self.contains(&WorldEffect::思考試行施行) {
-            return false
+            return false;
+        }
+        if world == WorldEffect::永久の夢 && self.contains(&WorldEffect::興味本位の竜起こし) {
+            return false;
         }
         self.contains(&world)
     }
@@ -671,6 +698,12 @@ impl Battle {
                         skill: Vec::new(),
                     })
                 })?;
+                if world_effect.check(WorldEffect::暴食の呪い) {
+                    character.skill.push((Skill::new("『暴食の呪い』".to_string(), None, None, Timing::Lose, Effect::Formula(vec![
+                        Command::Thp,
+                        Command::Heal,
+                    ])), true));
+                }
                 let sql = if world_effect.check(WorldEffect::天縢星喰) || world_effect.check(WorldEffect::天淵) {
                     "WITH f AS (SELECT slot,status,skill,skillname,skillword FROM fragment WHERE eno=?1) SELECT f.status,s.name,f.skillname,f.skillword,s.type,s.effect FROM f LEFT OUTER JOIN skill s ON f.skill=s.id ORDER BY f.slot ASC"
                 } else if world_effect.check(WorldEffect::花の園) {
@@ -700,6 +733,9 @@ impl Battle {
                                     .ok_or(rusqlite::Error::InvalidColumnType(5, "skill.effect".to_string(), rusqlite::types::Type::Null))?
                                 ).map_err(|_| rusqlite::Error::InvalidColumnType(5, "skill.effect".to_string(), rusqlite::types::Type::Blob))?;
                             if world_effect.check(WorldEffect::ワイルドハント) && name == "脱兎" {
+                                timing = Timing::None;
+                            }
+                            if world_effect.check(WorldEffect::興味本位の竜起こし) && timing == Timing::Reactive {
                                 timing = Timing::None;
                             }
                             Some(Skill::new(
@@ -751,14 +787,21 @@ impl Battle {
                         skill: Vec::new(),
                     })
                 })?;
+                if world_effect.check(WorldEffect::暴食の呪い) {
+                    character.skill.push((Skill::new("食らう".to_string(), None, None, Timing::Lose, Effect::Formula(vec![
+                        Command::Thp,
+                        Command::Heal,
+                    ])), true));
+                }
                 let mut stmt = conn.prepare("SELECT s.name,n.name,n.word,s.type,s.effect FROM npc_skill n INNER JOIN skill s ON n.id=?1 AND n.skill=s.id ORDER BY n.slot ASC")?;
                 character.skill = stmt.query_map(params![-eno], |row| {
-                    let timing = Timing::from(row.get::<_, i8>(3)?);
+                    let name = row.get(0)?;
+                    let mut timing = Timing::from(row.get::<_, i8>(3)?);
                     if timing == Timing::World {
                         let world = WorldEffect::convert(row.get(4)?).map_err(|_| rusqlite::Error::InvalidColumnType(4, "skill.effect".to_string(), rusqlite::types::Type::Blob))?;
                         Ok((
                             Skill::new(
-                                row.get(0)?,
+                                name,
                                 row.get(1)?,
                                 row.get(2)?,
                                 timing,
@@ -768,9 +811,15 @@ impl Battle {
                         ))
                     } else {
                         let formula = Command::convert(row.get(4)?).map_err(|_| rusqlite::Error::InvalidColumnType(4, "skill.effect".to_string(), rusqlite::types::Type::Blob))?;
+                        if world_effect.check(WorldEffect::ワイルドハント) && name == "脱兎" {
+                            timing = Timing::None;
+                        }
+                        if world_effect.check(WorldEffect::興味本位の竜起こし) && timing == Timing::Reactive {
+                            timing = Timing::None;
+                        }
                         Ok((
                             Skill::new(
-                                row.get(0)?,
+                                name,
                                 row.get(1)?,
                                 row.get(2)?,
                                 timing,
@@ -853,8 +902,9 @@ impl Battle {
                                     }
                                 },
                                 Command::Range => {
-                                    if !self.world.check(WorldEffect::天淵) {
-                                        if stack.pop()? <= self.range && stack.pop()? >= self.range {
+                                    let v = stack.pop()?..=stack.pop()?;
+                                    if !self.world.check(WorldEffect::天淵) && !self.world.check(WorldEffect::双眸虹霓) {
+                                        if v.contains(&self.range) {
                                             action.push(format!("{} {}", String::from(f.to_owned()), self.range));
                                         } else {
                                             break;
@@ -1071,9 +1121,9 @@ impl Battle {
             self.log.turn.push(LogTurn::make(SYSTEM, Some(CHECK), None, None, None, None));
             if self.world.check(WorldEffect::暁) && !self.world.check(WorldEffect::真剣勝負) {
                 if self.character[act].status.hp > self.character[act ^ 1].status.hp {
-                    Ok(Some(BattleResult::Win(act)))
+                    Ok(Some(BattleResult::Win(act ^ self.world.check(WorldEffect::狡猾なるすり替え) as usize)))
                 } else if self.character[act].status.hp < self.character[act ^ 1].status.hp {
-                    Ok(Some(BattleResult::Win(act ^ 1)))
+                    Ok(Some(BattleResult::Win(act ^ 1 ^ self.world.check(WorldEffect::狡猾なるすり替え) as usize)))
                 } else {
                     Ok(Some(BattleResult::Draw))
                 }
@@ -1096,11 +1146,11 @@ impl Battle {
             } else {
                 // どちらとも行動していなければ終了
                 if self.world.check(WorldEffect::真剣勝負) {
-                    Ok(Some(BattleResult::Win(winer)))
+                    Ok(Some(BattleResult::Win(winer ^ self.world.check(WorldEffect::狡猾なるすり替え) as usize)))
                 } else if self.world.check(WorldEffect::心星の観測者) || self.world.check(WorldEffect::逃げるが勝ち) {
                     Ok(Some(BattleResult::Draw))
                 } else {
-                    Ok(Some(BattleResult::Win(winer)))
+                    Ok(Some(BattleResult::Win(winer ^ self.world.check(WorldEffect::狡猾なるすり替え) as usize)))
                 }
             }
         } else if self.range >= self.escape_range {
@@ -1121,7 +1171,7 @@ impl Battle {
                 } else if self.world.check(WorldEffect::心星の観測者) {
                     Ok(Some(BattleResult::Draw))
                 } else if self.world.check(WorldEffect::逃げるが勝ち) {
-                    Ok(Some(BattleResult::Win(act)))
+                    Ok(Some(BattleResult::Win(act ^ self.world.check(WorldEffect::狡猾なるすり替え) as usize)))
                 } else {
                     Ok(Some(BattleResult::Escape))
                 }
@@ -1402,6 +1452,10 @@ pub fn battle(eno: [i16; 2]) -> Result<(BattleResult, String), String> {
                             _ => (),
                         }
                     }
+                    if world == &WorldEffect::解呪の部屋 {
+                        mem::swap(&mut battle.character[0].status.hp, &mut battle.character[0].status.mp);
+                        mem::swap(&mut battle.character[1].status.hp, &mut battle.character[1].status.mp);
+                    }
                     battle.log.turn.push(LogTurn::make_string(
                         format!("world-{}", get_side(&user)).as_str(),
                         &skill.0.word,
@@ -1454,6 +1508,7 @@ pub fn battle(eno: [i16; 2]) -> Result<(BattleResult, String), String> {
         }
         battle.log.turn.push(LogTurn::make(SYSTEM, Some(&format!("<hr>ターン {}", turn)), None, None, action.as_deref(), Some([&battle.character[0].status, &battle.character[1].status])));
         for i in 0..battle.character.len() {
+            let thp = battle.character[i ^ 1].status.hp;
             battle.skill_execute(i, Timing::Active)?;
             if battle.world.check(WorldEffect::TheGazer) {
                 if rand::random::<u8>() < 8 {
@@ -1464,6 +1519,9 @@ pub fn battle(eno: [i16; 2]) -> Result<(BattleResult, String), String> {
             battle.result = battle.check_battle_result(i)?;
             if battle.result.is_some() {
                 break;
+            }
+            if battle.world.check(WorldEffect::天上の風) {
+                battle.character[i ^ 1].status.hp = thp;
             }
         }
     }
@@ -1509,7 +1567,7 @@ pub fn battle(eno: [i16; 2]) -> Result<(BattleResult, String), String> {
         },
     }
     // 戦利品処理
-    if !battle.world.check(WorldEffect::真剣勝負) || battle.world.check(WorldEffect::天縢星喰) {
+    if !(battle.world.check(WorldEffect::真剣勝負) || battle.world.check(WorldEffect::飢えず満ちず)) || battle.world.check(WorldEffect::天縢星喰) {
         battle.reward()?;
     }
     // ログ保存
