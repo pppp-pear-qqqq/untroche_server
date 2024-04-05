@@ -187,6 +187,9 @@ main {
 		.acronym::after {
 			content: ']';
 		}
+		.name {
+			font-weight: bolder;
+		}
 		.eno::before {
 			content: 'Eno.';
 		}

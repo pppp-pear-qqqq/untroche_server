@@ -187,7 +187,7 @@ pub(super) async fn get_timeline(info: web::Query<SearchOrder>) -> Result<Json<V
     let conn = common::open_database()?;
 	// 取得
 	let mut stmt = conn.prepare(format!(
-		"SELECT id,timestamp,from_eno,to_eno,location,acronym,color,name,word FROM timeline WHERE live=true{}",
+		"SELECT id,timestamp,from_eno,to_eno,location,acronym,color,name,word FROM timeline WHERE live=true{} LIMIT 1000",
 		if !sql.is_empty() {
 			format!(" AND {}", sql.join(" AND "))
 		} else {

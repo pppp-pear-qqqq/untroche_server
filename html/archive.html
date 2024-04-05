@@ -68,7 +68,7 @@
 					<label>対象者Eno<span class="help">カンマ区切りで指定することができます。<br>複数指定した場合は、指定したうちの誰かに向けられた発言を抽出します。<br>番号を負の数にすることで、その相手宛ての発言を含めないようにすることも可能です。</span><input type="text" name="to" placeholder="1,2,3 ..."></label>
 					<label>検索文字列<input name="word" type="text" nullable></label>
 					<button type="button" onclick="load(document.querySelector('#timeline .log')).timeline(params(this.parentNode))">検索</button>
-					<h4>ログ保存<span class="help">HTML形式で保存する場合、別途スタイルシートを保存し、それをファイルと同じ位置に置く必要があります。<br>ひとつスタイルシートを保存すれば、それと同じ位置に置くことによって複数のログで利用することが出来ます。<br>スタイルシートは<a href="http://untroche.com/strings/css/strings.css" download="strings.css">ここ</a>からダウンロードできます。</span></h4>
+					<h4>ログ保存<span class="help">HTML形式で保存する場合、別途スタイルシートを保存し、それをファイルと同じ位置に置く必要があります。<br>ひとつスタイルシートを保存すれば、それと同じ位置に置くことによって複数のログで利用することが出来ます。<br>スタイルシートは<a href="css/strings.css" download>ここ</a>からダウンロードできます。</span></h4>
 					<div>
 						<button type="button" onclick="save('timeline', 'json')">JSON</button>
 						<button type="button" onclick="save('timeline', 'html')">HTML</button>

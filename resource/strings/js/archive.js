@@ -172,8 +172,8 @@ function save(target, mode) {
 
 window.addEventListener('load', () => {
 	const help = document.getElementById('help');
-	help.addEventListener('click', () => {
-		help.classList.add('hide');
+	help.addEventListener('click', event => {
+		if (event.target === help) help.classList.add('hide');
 	})
 	document.querySelectorAll('.help').forEach(elem => {
 		elem.addEventListener('click', event => {
