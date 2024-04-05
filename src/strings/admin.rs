@@ -613,3 +613,52 @@ pub(super) async fn add_players_fragment(req: HttpRequest, info: web::Json<Playe
         }
     }
 }
+
+#[derive(Deserialize)]
+pub(super) struct BattleData {
+    left: i16,
+    right: i16,
+}
+pub(super) async fn battle(req: HttpRequest, info: web::Json<BattleData>) -> Result<String, actix_web::Error> {
+    // パスワード取得
+    let password =  req.cookie("admin_password")
+        .ok_or(ErrorForbidden("パスワードが無効です"))?;
+    // データベースに接続
+	let conn = common::open_database()?;
+    // パスワード確認
+    check_server_password(&conn, password.value())?;
+    // 処理開始
+    Ok(battle::battle([info.left, info.right]).map_err(|err| ErrorInternalServerError(err))?.1)
+}
+#[derive(Deserialize)]
+pub(super) struct Talk {
+    from: i16,
+    to: Option<i16>,
+    location: Option<String>,
+    acronym: String,
+    color: String,
+    name: String,
+    word: String,
+}
+pub(super) async fn talk(req: HttpRequest, info: web::Json<Talk>) -> Result<String, actix_web::Error> {
+    // パスワード取得
+    let password =  req.cookie("admin_password")
+        .ok_or(ErrorForbidden("パスワードが無効です"))?;
+    // データベースに接続
+	let conn = common::open_database()?;
+    // パスワード確認
+    check_server_password(&conn, password.value())?;
+    // 処理開始
+    let re = Regex::new("\r|\n|\r\n").map_err(|err| ErrorInternalServerError(err))?;
+    let word = html_special_chars_reverce(&re.replace_all(&info.word, "<br>"));
+    let color = [
+        u8::from_str_radix(&info.color[1..3], 16).map_err(|err| ErrorBadRequest(err))?,
+        u8::from_str_radix(&info.color[3..5], 16).map_err(|err| ErrorBadRequest(err))?,
+        u8::from_str_radix(&info.color[5..7], 16).map_err(|err| ErrorBadRequest(err))?,
+    ];
+    conn.execute(
+        "INSERT INTO timeline(from_eno,to_eno,location,acronym,color,name,word) VALUES(?1,?2,?3,?4,?5,?6,?7)",
+        params![info.from, info.to, info.location, info.acronym, color, info.name, word]
+    ).map_err(|err| ErrorInternalServerError(err))?;
+    Ok(word)
+}

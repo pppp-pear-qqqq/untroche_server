@@ -1,0 +1,218 @@
+@keyframes rainbow {
+	100% {
+		background-position-x: 200%;
+	}
+}
+* {
+	margin: 0;
+	padding: 0;
+}
+html {
+	color: #d4d4da;
+	font: 14px 'Noto Sans JP', sans-serif;
+	line-height: 1.8;
+}
+
+div, header, footer, main {
+	display: flex;
+}
+a {
+	text-decoration-line: underline;
+	text-decoration: color solid 1px;
+	cursor: pointer;
+}
+a:hover {
+	text-decoration-thickness: 1.2px;
+	text-decoration-color: #ff3380;
+}
+a:link {
+	color: #aaffff;
+}
+a:visited {
+	color: #ffaaff;
+}
+.scroll {
+	scrollbar-gutter: stable;
+	border-right-color: #0000;
+	transition: border-right-color 0.2s;
+}
+.scroll:hover {
+	border-right-color: #767676;
+}
+.scroll::-webkit-scrollbar {
+	width: 4px;
+	height: 4px;
+}
+.scroll::-webkit-scrollbar-thumb {
+	border-right: 100vmax solid;
+	border-right-color: inherit;
+	border-radius: 4px 0 0 4px;
+}
+.hide{
+	display: none !important;
+}
+br.narrow{
+	display: none;
+}
+span[onclick] {
+	user-select: none;
+	cursor: pointer;
+}
+
+.bold{
+	font-weight: bolder;
+}
+.italic{
+	font-style: italic;
+}
+.underline{
+	text-decoration-line: underline;
+}
+.linethrough{
+	text-decoration-line: line-through;
+}
+.rainbow{
+	font-weight: bolder;
+	background: linear-gradient(to right, #ffaaff, #ffffaa, #aaffff, #ffaaff) 0% center/200%;
+	-webkit-background-clip: text;
+	background-clip: text;
+	-webkit-text-fill-color: transparent;
+	animation: rainbow 12s linear infinite;
+}
+.large {
+	font-size: larger;
+}
+.small {
+	font-size: smaller;
+}
+
+body {
+	background-color: #232328;
+	height: 100vh;
+	display: flex;
+	flex-direction: column;
+}
+.back::before {
+	content: 'Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.';
+	display: unset;
+	position: fixed;
+	width: 100vh;
+	height: 100vw;
+	top: 0;
+	left: 0;
+	z-index: -1;
+	font-size: 6vmax;
+	line-height: 1.2;
+	color: #0000;
+	text-shadow: 0 0 12px #ffffff0c;
+	word-break: break-all;
+	overflow: hidden;
+	transform-origin: left top;
+	transform: translateY(95vh) rotate(270deg);
+	user-select: none;
+}
+
+header {
+	padding: 12px 5vw;
+	border-bottom: 1px solid #767676;
+	font-size: 120%;
+	justify-content: space-between;
+	>p>.eno {
+		margin-right: 12px;
+	}
+}
+footer {
+	padding: 12px 20px;
+	border-top: 1px solid #767676;
+	font-size: 120%;
+	justify-content: space-evenly;
+	>p {
+		cursor: pointer;
+		transition: filter 200ms;
+	}
+	>p.select {
+		color: #ff3380;
+	}
+	>p:not(.select):hover {
+		filter: brightness(1.5);
+	}
+}
+main {
+	flex-grow: 1;
+	flex-basis: 0;
+	margin: 0 auto;
+	gap: 40px;
+	>div {
+		border: 1px #767676;
+		border-style: none solid;
+		flex-direction: column;
+	}
+}
+
+#timeline {
+	>.scroll {
+		flex-grow: 1;
+		flex-basis: 0;
+		flex-direction: column-reverse;
+		overflow-y: auto;
+	}
+	.log {
+		padding: 8px 4px 8px 8px;
+		flex-direction: column;
+		gap: 10px;
+	}
+	div.talk {
+		padding: 4px 8px 0;
+		border-style: solid none none solid;
+		border-width: 1px;
+		display: grid;
+		grid-template-columns: min-content 1fr min-content;
+		gap: 6px;
+		background-color: #40404022;
+		.to {
+			grid-column: 1 / 3;
+		}
+		.to:empty {
+			display: none;
+		}
+		.word, .footer {
+			grid-column: 1 / -1;
+		}
+		.acronym {
+			grid-column-start: 1;
+		}
+		.acronym::before {
+			content: '[';
+		}
+		.acronym::after {
+			content: ']';
+		}
+		.eno::before {
+			content: 'Eno.';
+		}
+		.word {
+			width: 30em;
+			padding: 6px 0;
+			border: #767676 1px;
+			border-style: dashed none;
+		}
+		.footer {
+			font-size: small;
+			gap: 8px;
+		}
+		.location:empty {
+			content: url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScyNCcgaGVpZ2h0PScyNCcgdmlld0JveD0iMCAwIDI0IDI0Ij48ZyBmaWxsPSdub25lJyBmaWxsLXJ1bGU9J2V2ZW5vZGQnPjxwYXRoIGQ9J00yNCAwdjI0SDBWMGgyNFpNMTIuNTkzIDIzLjI1OGwtLjAxMS4wMDItLjA3MS4wMzUtLjAyLjAwNC0uMDE0LS4wMDQtLjA3MS0uMDM1Yy0uMDEtLjAwNC0uMDE5LS4wMDEtLjAyNC4wMDVsLS4wMDQuMDEtLjAxNy40MjguMDA1LjAyLjAxLjAxMy4xMDQuMDc0LjAxNS4wMDQuMDEyLS4wMDQuMTA0LS4wNzQuMDEyLS4wMTYuMDA0LS4wMTctLjAxNy0uNDI3Yy0uMDAyLS4wMS0uMDA5LS4wMTctLjAxNy0uMDE4Wm0uMjY1LS4xMTMtLjAxMy4wMDItLjE4NS4wOTMtLjAxLjAxLS4wMDMuMDExLjAxOC40My4wMDUuMDEyLjAwOC4wMDcuMjAxLjA5M2MuMDEyLjAwNC4wMjMgMCAuMDI5LS4wMDhsLjAwNC0uMDE0LS4wMzQtLjYxNGMtLjAwMy0uMDEyLS4wMS0uMDItLjAyLS4wMjJabS0uNzE1LjAwMmEuMDIzLjAyMyAwIDAgMC0uMDI3LjAwNmwtLjAwNi4wMTQtLjAzNC42MTRjMCAuMDEyLjAwNy4wMi4wMTcuMDI0bC4wMTUtLjAwMi4yMDEtLjA5My4wMS0uMDA4LjAwNC0uMDExLjAxNy0uNDMtLjAwMy0uMDEyLS4wMS0uMDEtLjE4NC0uMDkyWicvPjxwYXRoIGZpbGw9JyM3Njc2NzZGRicgZD0nTTYgOGE2IDYgMCAxIDEgMTIgMGgxYTIgMiAwIDAgMSAyIDJ2MTBhMiAyIDAgMCAxLTIgMkg1YTIgMiAwIDAgMS0yLTJWMTBhMiAyIDAgMCAxIDItMmgxWm02LTRhNCA0IDAgMCAxIDQgNEg4YTQgNCAwIDAgMSA0LTRabTIgMTBhMiAyIDAgMCAxLTEgMS43MzJWMTdhMSAxIDAgMSAxLTIgMHYtMS4yNjhBMiAyIDAgMCAxIDEyIDEyYTIgMiAwIDAgMSAyIDJaJy8+PC9nPjwvc3ZnPg==');
+			width: 21px;
+			height: 21px;
+		}
+		.location::before, .location::after {
+			content: '"';
+		}
+		.id {
+			margin-left: auto;
+		}
+		.id::before {
+			content: 'id:';
+		}
+	}
+}

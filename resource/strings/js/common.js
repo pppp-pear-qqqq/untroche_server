@@ -65,7 +65,7 @@ function make_skillfomula(array) {
 }
 
 function array_to_colorcode(arg) {
-	return `${arg[0].toString(16).padStart(2,'0')}${arg[1].toString(16).padStart(2,'0')}${arg[2].toString(16).padStart(2, '0')}`
+	return `#${arg[0].toString(16).padStart(2,'0')}${arg[1].toString(16).padStart(2,'0')}${arg[2].toString(16).padStart(2, '0')}`
 }
 
 function reset_timeline() {

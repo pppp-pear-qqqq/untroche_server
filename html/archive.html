@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width,initial-scale=1">
+		<title>"Strings"</title>
+		<link rel="preconnect" href="https://fonts.googleapis.com">
+		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+		<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;800&display=swap">
+		<link rel="stylesheet" type="text/css" href="css/style.css">
+		<link rel="stylesheet" type="text/css" href="css/archive.css">
+		<link rel="stylesheet" type="text/css" href="api/css/alertify.min.css">
+		<script src="api/alertify.min.js"></script>
+		<script src="js/cookie.class.js"></script>
+		<script src="js/ajax.class.js"></script>
+		<script src="js/common.js"></script>
+		<script src="js/archive.js"></script>
+		<template>
+			<div class="talk">
+				<p class="to" onclick="toggle_display_talk(this.parentNode)"></p>
+				<p class="acronym"></p>
+				<p class="name"></p>
+				<p class="eno"></p>
+				<p class="word"></p>
+				<div class="footer">
+					<span class="location"></span>
+					<span class="id"></span>
+					<span class="timestamp"></span>
+				</div>
+			</div>
+			<div class="fragment" onclick="fragment_desc(this)">
+				<p class="slot"></p>
+				<p class="name"></p>
+				<p class="status"></p>
+				<p class="category hide"></p>
+				<p class="lore hide"></p>
+				<div class="skill">
+					<p class="name"></p>
+					<p class="default_name"></p>
+					<p class="word hide"></p>
+					<p class="lore hide"></p>
+					<p class="timing hide"></p>
+					<p class="effect hide"></p>
+				</div>
+			</div>
+		</template>
+	</head>
+	<body class="back">
+		<header>
+			<p class="system">"Strings".archive</p>
+		</header>
+		<main class="timeline">
+			<div id="timeline">
+				<div class="scroll">
+					<div class="log"></div>
+				</div>
+				<div class="menu_tab" onclick="this.classList.toggle('open')"><img src="pic/up_fill.svg" width="32px" height="32px"></div>
+				<div class="menu">
+					<label>ロケーション<input type="text" name="location" value="*" list="locations"><datalist id="locations">
+						<option>*</option>
+						<option>門前</option>
+						<option>草原</option>
+						<option>海辺</option>
+						<option>岩場</option>
+						<option>森林</option>
+					</datalist></label>
+					<label>発言者Eno<span class="help">カンマ区切りで指定することができます。<br>複数指定した場合は、指定したうちの誰かの発言を抽出します。<br>番号を負の数にすることで、その相手の発言を含めないようにすることも可能です。</span><input type="text" name="from" placeholder="1,2,3 ..."></label>
+					<label>対象者Eno<span class="help">カンマ区切りで指定することができます。<br>複数指定した場合は、指定したうちの誰かに向けられた発言を抽出します。<br>番号を負の数にすることで、その相手宛ての発言を含めないようにすることも可能です。</span><input type="text" name="to" placeholder="1,2,3 ..."></label>
+					<label>検索文字列<input name="word" type="text" nullable></label>
+					<button type="button" onclick="load(document.querySelector('#timeline .log')).timeline(params(this.parentNode))">検索</button>
+					<h4>ログ保存<span class="help">HTML形式で保存する場合、別途スタイルシートを保存し、それをファイルと同じ位置に置く必要があります。<br>ひとつスタイルシートを保存すれば、それと同じ位置に置くことによって複数のログで利用することが出来ます。<br>スタイルシートは<a href="http://untroche.com/strings/css/strings.css" download="strings.css">ここ</a>からダウンロードできます。</span></h4>
+					<div>
+						<button type="button" onclick="save('timeline', 'json')">JSON</button>
+						<button type="button" onclick="save('timeline', 'html')">HTML</button>
+					</div>
+				</div>
+			</div>
+			<div id="fragment">
+				<div class="header"><p>戦闘用・公開</p><p>公開</p><p>非公開</p></div>
+				<div class="container scroll"></div>
+				<div class="menu_tab" onclick="this.classList.toggle('open')"><img src="pic/up_fill.svg" width="32px" height="32px"></div>
+				<div class="menu">
+					<label>Eno<input type="number" name="eno"></label>
+					<label>パスワード<input type="password" name="password"></label>
+					<button type="button" onclick="load(document.querySelector('#fragment .container')).fragments(params(this.parentNode))">取得</button>
+					<h4>ログ保存</h4>
+					<button type="button" onclick="save('fragments')">JSON</button>
+				</div>
+				<div class="desc scroll">
+					<p class="name"></p>
+					<p class="category"></p>
+					<p class="lore"></p>
+					<p class="status"></p>
+					<div class="skill">
+						<p><span class="name"></span><span class="default_name"></span></p>
+						<p class="word"></p>
+						<p class="lore"></p>
+						<p class="timing"></p>
+						<p class="effect"></p>
+					</div>
+					<div class="footer">
+						<a onclick="fragment_desc()">Close</a>
+					</div>
+				</div>
+			</div>
+		</main>
+		<footer>
+			<p class="tab select" onclick="change_display('timeline', this)">Chat</p>
+			<p class="tab" onclick="change_display('fragment', this)">Fragment</p>
+		</footer>
+		<div id="help" class="hide">
+			<div></div>
+		</div>
+	</body>
+</html>

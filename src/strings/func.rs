@@ -23,6 +23,7 @@ pub(super) async fn login(info: web::Json<LoginData>) -> Result<String, actix_we
         match state.as_str() {
             "maintenance" => return Err(ErrorServiceUnavailable("メンテナンス中につき操作できません")),
             "end" => return Err(ErrorServiceUnavailable("このサイトは稼働終了しました")),
+            "littlegirl" => (),
             _ => return Err(ErrorInternalServerError(common::SERVER_UNDEFINED_TEXT))
         }
     }
@@ -78,6 +79,7 @@ pub(super) async fn register(info: web::Json<RegisterData>) -> Result<String, ac
         match state.as_str() {
             "maintenance" => return Err(ErrorServiceUnavailable("メンテナンス中につき操作できません")),
             "end" => return Err(ErrorServiceUnavailable("このサイトは稼働終了しました")),
+            "littlegirl" => (),
             _ => return Err(ErrorInternalServerError(common::SERVER_UNDEFINED_TEXT))
         }
     }
@@ -135,6 +137,7 @@ pub(super) async fn send_chat(req: HttpRequest, info: web::Json<SendChatData>) -
             match state.as_str() {
                 "maintenance" => return Err(ErrorServiceUnavailable(common::SERVER_MAINTENANCE_TEXT)),
                 "end" => return Err(ErrorServiceUnavailable(common::SERVER_END_TEXT)),
+                "littlegirl" => return Err(ErrorServiceUnavailable(common::SERVER_LITTLEGIRL_TEXT)),
                 _ => return Err(ErrorInternalServerError(common::SERVER_UNDEFINED_TEXT))
             }
         }
@@ -180,6 +183,7 @@ pub(super) async fn delete_chat(req: HttpRequest, info: web::Json<DeleteChatData
         match state.as_str() {
             "maintenance" => return Err(ErrorServiceUnavailable(common::SERVER_MAINTENANCE_TEXT)),
             "end" => return Err(ErrorServiceUnavailable(common::SERVER_END_TEXT)),
+            "littlegirl" => (),
             _ => return Err(ErrorInternalServerError(common::SERVER_UNDEFINED_TEXT))
         }
     }
@@ -229,6 +233,29 @@ pub(super) async fn get_chat(req: HttpRequest, info: web::Query<GetChatData>) ->
                 admin::check_server_password(&conn, password.value())?;
             },
             "end" => (),
+            "littlegirl" => {
+                // データベースから取得
+                return || -> Result<_, rusqlite::Error> {
+                    let mut stmt = conn.prepare("SELECT id,datetime(timestamp,'+9 hours'),from_eno,to_eno,location,acronym,color,name,word FROM timeline WHERE live=true AND from_eno=0 ORDER BY id DESC LIMIT ?1")?;
+                    let result = stmt.query_map(
+                        params![info.num],
+                        |row| {
+                            Ok(Chat {
+                                id: row.get(0)?,
+                                timestamp: row.get(1)?,
+                                from: row.get(2)?,
+                                to: row.get(3)?,
+                                location: row.get(4)?,
+                                acronym: row.get(5)?,
+                                color: row.get(6)?,
+                                name: row.get(7)?,
+                                word: row.get(8)?,
+                            })
+                        }
+                    )?.collect::<Result<Vec<_>, _>>()?;
+                    Ok(web::Json(result))
+                }().map_err(|err| ErrorInternalServerError(err));
+            },
             _ => return Err(ErrorInternalServerError(common::SERVER_UNDEFINED_TEXT))
         }
     }
@@ -434,6 +461,7 @@ pub(super) async fn get_characters(req: HttpRequest, info: web::Query<GetCharact
         match state.as_str() {
             "maintenance" => return Err(ErrorServiceUnavailable(common::SERVER_MAINTENANCE_TEXT)),
             "end" => (),
+            "littlegirl" => (),
             _ => return Err(ErrorInternalServerError(common::SERVER_UNDEFINED_TEXT))
         }
     }
@@ -537,6 +565,7 @@ pub(super) async fn get_fragments(req: HttpRequest) -> Result<web::Json<Vec<Frag
         match state.as_str() {
             "maintenance" => return Err(ErrorServiceUnavailable(common::SERVER_MAINTENANCE_TEXT)),
             "end" => (),
+            "littlegirl" => (),
             _ => return Err(ErrorInternalServerError(common::SERVER_UNDEFINED_TEXT))
         }
     }
@@ -627,6 +656,7 @@ pub(super) async fn update_fragments(req: HttpRequest, info: web::Json<UpdateFra
         match state.as_str() {
             "maintenance" => return Err(ErrorServiceUnavailable(common::SERVER_MAINTENANCE_TEXT)),
             "end" => return Err(ErrorServiceUnavailable(common::SERVER_END_TEXT)),
+            "littlegirl" => (),
             _ => return Err(ErrorInternalServerError(common::SERVER_UNDEFINED_TEXT))
         }
     }
@@ -824,6 +854,7 @@ pub(super) async fn create_fragment(req: HttpRequest, info: web::Json<CreateFrag
         match state.as_str() {
             "maintenance" => return Err(ErrorServiceUnavailable(common::SERVER_MAINTENANCE_TEXT)),
             "end" => return Err(ErrorServiceUnavailable(common::SERVER_END_TEXT)),
+            "littlegirl" => (),
             _ => return Err(ErrorInternalServerError(common::SERVER_UNDEFINED_TEXT))
         }
     }
@@ -917,6 +948,7 @@ pub(super) async fn get_has_kins(req: HttpRequest) -> Result<web::Json<i32>, act
         match state.as_str() {
             "maintenance" => return Err(ErrorServiceUnavailable(common::SERVER_MAINTENANCE_TEXT)),
             "end" => (),
+            "littlegirl" => (),
             _ => return Err(ErrorInternalServerError(common::SERVER_UNDEFINED_TEXT))
         }
     }
@@ -961,8 +993,12 @@ pub(super) async fn get_profile(req: HttpRequest, info: web::Query<GetProfileDat
         match state.as_str() {
             "maintenance" => return Err(ErrorServiceUnavailable(common::SERVER_MAINTENANCE_TEXT)),
             "end" => (),
+            "littlegirl" => (),
             _ => return Err(ErrorInternalServerError(common::SERVER_UNDEFINED_TEXT))
         }
+    }
+    if info.eno == 0 {
+        return Err(ErrorBadRequest("<span class=\"small\">少女のひみつを、みだりに暴くものじゃないわ。</span>"));
     }
     // 名前以外の単一項目を取得
     let (name, acronym, color, comment, content, memo): (String, String, [u8; 3], String, String, String) = conn
@@ -1115,7 +1151,8 @@ pub(super) async fn update_profile(req: HttpRequest, info: web::Json<UpdateProfi
         match state.as_str() {
             "maintenance" => return Err(ErrorServiceUnavailable(common::SERVER_MAINTENANCE_TEXT)),
             "end" => return Err(ErrorServiceUnavailable(common::SERVER_END_TEXT)),
-            _ => return Err(ErrorInternalServerError(common::SERVER_UNDEFINED_TEXT))
+            "littlegirl" => (),
+            _ => return Err(ErrorInternalServerError(common::SERVER_UNDEFINED_TEXT)),
         }
     }
     // Enoを取得
@@ -1163,6 +1200,7 @@ pub(super) async fn send_battle(req: HttpRequest, info: web::Json<SendBattleData
         match state.as_str() {
             "maintenance" => return Err(ErrorServiceUnavailable(common::SERVER_MAINTENANCE_TEXT)),
             "end" => return Err(ErrorServiceUnavailable(common::SERVER_END_TEXT)),
+            "littlegirl" => return Err(ErrorServiceUnavailable(common::SERVER_LITTLEGIRL_TEXT)),
             _ => return Err(ErrorInternalServerError(common::SERVER_UNDEFINED_TEXT))
         }
     }
@@ -1216,6 +1254,7 @@ pub(super) async fn receive_battle(req: HttpRequest, info: web::Json<ReceiveBatt
         match state.as_str() {
             "maintenance" => return Err(ErrorServiceUnavailable(common::SERVER_MAINTENANCE_TEXT)),
             "end" => return Err(ErrorServiceUnavailable(common::SERVER_END_TEXT)),
+            "littlegirl" => return Err(ErrorServiceUnavailable(common::SERVER_LITTLEGIRL_TEXT)),
             _ => return Err(ErrorInternalServerError(common::SERVER_UNDEFINED_TEXT))
         }
     }
@@ -1294,6 +1333,7 @@ pub(super) async fn get_battle_reserve(req: HttpRequest) -> Result<web::Json<Vec
         match state.as_str() {
             "maintenance" => return Err(ErrorServiceUnavailable(common::SERVER_MAINTENANCE_TEXT)),
             "end" => (),
+            "littlegirl" => (),
             _ => return Err(ErrorInternalServerError(common::SERVER_UNDEFINED_TEXT))
         }
     }
@@ -1339,6 +1379,7 @@ pub(super) async fn get_battle_logs(info: web::Query<Eno>) -> Result<web::Json<V
         match state.as_str() {
             "maintenance" => return Err(ErrorServiceUnavailable(common::SERVER_MAINTENANCE_TEXT)),
             "end" => (),
+            "littlegirl" => (),
             _ => return Err(ErrorInternalServerError(common::SERVER_UNDEFINED_TEXT))
         }
     }
@@ -1369,6 +1410,7 @@ pub(super) async fn get_battle_log(info: web::Query<GetBattleLogData>) -> Result
         match state.as_str() {
             "maintenance" => return Err(ErrorServiceUnavailable(common::SERVER_MAINTENANCE_TEXT)),
             "end" => (),
+            "littlegirl" => (),
             _ => return Err(ErrorInternalServerError(common::SERVER_UNDEFINED_TEXT))
         }
     }
@@ -1396,6 +1438,7 @@ pub(super) async fn cancel_battle(req: HttpRequest, info: web::Json<CancelBattle
         match state.as_str() {
             "maintenance" => return Err(ErrorServiceUnavailable(common::SERVER_MAINTENANCE_TEXT)),
             "end" => return Err(ErrorServiceUnavailable(common::SERVER_END_TEXT)),
+            "littlegirl" => (),
             _ => return Err(ErrorInternalServerError(common::SERVER_UNDEFINED_TEXT))
         }
     }
@@ -1428,6 +1471,7 @@ pub(super) async fn get_location(req: HttpRequest, info: web::Query<GetLocationD
         match state.as_str() {
             "maintenance" => return Err(ErrorServiceUnavailable(common::SERVER_MAINTENANCE_TEXT)),
             "end" => (),
+            "littlegirl" => (),
             _ => return Err(ErrorInternalServerError(common::SERVER_UNDEFINED_TEXT))
         }
     }
@@ -1463,6 +1507,7 @@ pub(super) async fn delete_character(req: HttpRequest) -> Result<String, actix_w
         match state.as_str() {
             "maintenance" => return Err(ErrorServiceUnavailable(common::SERVER_MAINTENANCE_TEXT)),
             "end" => return Err(ErrorServiceUnavailable(common::SERVER_END_TEXT)),
+            "littlegirl" => (),
             _ => return Err(ErrorInternalServerError(common::SERVER_UNDEFINED_TEXT))
         }
     }
@@ -1487,6 +1532,7 @@ pub(super) async fn teleport_to_master(req: HttpRequest) -> Result<String, actix
         match state.as_str() {
             "maintenance" => return Err(ErrorServiceUnavailable(common::SERVER_MAINTENANCE_TEXT)),
             "end" => return Err(ErrorServiceUnavailable(common::SERVER_END_TEXT)),
+            "littlegirl" => (),
             _ => return Err(ErrorInternalServerError(common::SERVER_UNDEFINED_TEXT))
         }
     }

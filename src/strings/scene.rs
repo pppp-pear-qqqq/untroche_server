@@ -38,6 +38,7 @@ pub async fn next(req: HttpRequest, info: web::Json<NextData>) -> Result<String,
         match state.as_str() {
             "maintenance" => return Err(ErrorServiceUnavailable(common::SERVER_MAINTENANCE_TEXT)),
             "end" => return Err(ErrorServiceUnavailable(common::SERVER_END_TEXT)),
+            "littlegirl" => return Err(ErrorServiceUnavailable(common::SERVER_LITTLEGIRL_TEXT)),
             _ => return Err(ErrorInternalServerError(common::SERVER_UNDEFINED_TEXT))
         }
     }

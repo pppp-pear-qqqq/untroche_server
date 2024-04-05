@@ -346,6 +346,7 @@ pub(super) enum WorldEffect {
     暴食の呪い,
     双眸虹霓,
     天上の風,
+    Strings,
 }
 impl WorldEffect {
     pub(super) fn convert(blob: Vec<u8>) -> Result<Self, String> {
@@ -399,6 +400,7 @@ impl TryFrom<i16> for WorldEffect {
             35 => Ok(Self::暴食の呪い),
             36 => Ok(Self::双眸虹霓),
             37 => Ok(Self::天上の風),
+            99 => Ok(Self::Strings),
             _ => Err("定義されていない世界観です".to_string()),
         }
     }
@@ -411,7 +413,7 @@ impl From<WorldEffect> for String {
             WorldEffect::逃げるが勝ち => "勝利条件改変：逃走成功時勝利",
             WorldEffect::オープンオーバー => "戦闘開始前全フラグメント開示",
             WorldEffect::騎士団 => "毎ターン開始時全ステータスランダム化",
-            WorldEffect::地獄門 => "他世界と\"Strings\"世界間での移動可能",
+            WorldEffect::地獄門 => "他世界と\"Strings\"世界間を繋ぐ門の生成",
             WorldEffect::DeepDeepDeep => "戦闘システム改変：より多く移動したものの勝利",
             WorldEffect::天縢星喰 => "全フラグメント使用 + 報酬絶対・極大化",
             WorldEffect::椿 => "間合3を超える攻撃の無効",
@@ -444,6 +446,7 @@ impl From<WorldEffect> for String {
             WorldEffect::暴食の呪い => "[敗北]回復(相手HP)のスキルを先頭に追加　このスキルの発動条件は改変されない",
             WorldEffect::双眸虹霓 => "間合条件無効化 + 虹霓",
             WorldEffect::天上の風 => "相手行動終了時、受ダメージ分回復 + 間合ランダム変化",
+            WorldEffect::Strings => "人格がフラグメントとして剥離する",
         }.to_string()
     }
 }
@@ -1339,17 +1342,32 @@ pub(super) fn take_fragment(conn: &Connection, win: i16, lose: i16, world: &Vec<
         }
     } else {
         // 勝利者がNPC
-        let result = if world.check(WorldEffect::イロを喪った唄) {
-            let mut stmt = conn.prepare("SELECT slot,category,name FROM fragment WHERE eno=?1 AND slot<=?2 AND category!='世界観' AND name LIKE '%虚無%'")?;
-            // 候補の取得
-            let result: Vec<(i8, String, String)> = stmt.query_map(params![lose, limit], |row| {
-                Ok((
-                    row.get(0)?,
-                    row.get(1)?,
-                    row.get(2)?,
-                ))
-            })?.collect::<Result<_, _>>()?;
-            if result.is_empty() {
+        if lose > 0 {
+            let result = if world.check(WorldEffect::イロを喪った唄) {
+                let mut stmt = conn.prepare("SELECT slot,category,name FROM fragment WHERE eno=?1 AND slot<=?2 AND category!='世界観' AND name LIKE '%虚無%'")?;
+                // 候補の取得
+                let result: Vec<(i8, String, String)> = stmt.query_map(params![lose, limit], |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                    ))
+                })?.collect::<Result<_, _>>()?;
+                if result.is_empty() {
+                    let mut stmt = conn.prepare("SELECT slot,category,name FROM fragment WHERE eno=?1 AND slot<=?2 AND category!='世界観'")?;
+                    // 候補の取得
+                    let result: Vec<(i8, String, String)> = stmt.query_map(params![lose, limit], |row| {
+                        Ok((
+                            row.get(0)?,
+                            row.get(1)?,
+                            row.get(2)?,
+                        ))
+                    })?.collect::<Result<_, _>>()?;
+                    result
+                } else {
+                    result
+                }
+            } else {
                 let mut stmt = conn.prepare("SELECT slot,category,name FROM fragment WHERE eno=?1 AND slot<=?2 AND category!='世界観'")?;
                 // 候補の取得
                 let result: Vec<(i8, String, String)> = stmt.query_map(params![lose, limit], |row| {
@@ -1360,38 +1378,44 @@ pub(super) fn take_fragment(conn: &Connection, win: i16, lose: i16, world: &Vec<
                     ))
                 })?.collect::<Result<_, _>>()?;
                 result
+            };
+            // 移動対象を決定
+            if !result.is_empty() {
+                let buf = &result[rand::random::<usize>() % result.len()];
+                let t = {
+                    if buf.1 == "名前" {
+                        if let Some(doll) = result.iter().find(|&x| x.1 == "身代わり") {
+                            doll
+                        } else {
+                            buf
+                        }
+                    } else { buf }
+                };
+                // フラグメントの削除
+                conn.execute("DELETE FROM fragment WHERE eno=?1 AND slot=?2", params![lose, t.0])?;
+                Ok(Some(t.2.to_owned()))
             } else {
-                result
+                Ok(None)
             }
         } else {
-            let mut stmt = conn.prepare("SELECT slot,category,name FROM fragment WHERE eno=?1 AND slot<=?2 AND category!='世界観'")?;
+            // 敗北者がNPC
+            let mut stmt = conn.prepare("SELECT weight,name FROM reward WHERE npc=?1")?;
             // 候補の取得
-            let result: Vec<(i8, String, String)> = stmt.query_map(params![lose, limit], |row| {
+            let result: Vec<(i32, String)> = stmt.query_map(params![lose * -1], |row| {
                 Ok((
                     row.get(0)?,
                     row.get(1)?,
-                    row.get(2)?,
                 ))
             })?.collect::<Result<_, _>>()?;
-            result
-        };
-        // 移動対象を決定
-        if !result.is_empty() {
-            let buf = &result[rand::random::<usize>() % result.len()];
-            let t = {
-                if buf.1 == "名前" {
-                    if let Some(doll) = result.iter().find(|&x| x.1 == "身代わり") {
-                        doll
-                    } else {
-                        buf
-                    }
-                } else { buf }
-            };
-            // フラグメントの削除
-            conn.execute("DELETE FROM fragment WHERE eno=?1 AND slot=?2", params![lose, t.0])?;
-            Ok(Some(t.2.to_owned()))
-        } else {
-            Ok(None)
+            if !result.is_empty() {
+                let weight = WeightedIndex::new(result.iter().map(|x| x.0).collect::<Vec<_>>()).unwrap();
+                // 移動対象を決定
+                let t = &result[weight.sample(&mut rand::thread_rng())];
+                // 獲得
+                Ok(Some(t.1.to_owned()))
+            } else {
+                Ok(None)
+            }
         }
     }
 }
@@ -1571,7 +1595,7 @@ pub fn battle(eno: [i16; 2]) -> Result<(BattleResult, String), String> {
         battle.reward()?;
     }
     // ログ保存
-    battle.save_log()?;
+    println!("{}-{} ID{}", battle.character[0].name, battle.character[1].name, battle.save_log()?);
     // 処理終了
     Ok((battle.result.unwrap(), serde_json::to_string(&battle.log).map_err(|err| err.to_string())?))
 }

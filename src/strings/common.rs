@@ -24,6 +24,7 @@ pub static DATABASE: &str = "db/strings.db";
 pub static SERVER_MAINTENANCE_TEXT: &str = "メンテナンス中です。リロードしてください。";
 pub static SERVER_END_TEXT: &str = "このサイトは稼働終了しました。リロードしてください。";
 pub static SERVER_UNDEFINED_TEXT: &str = "サーバーが不明な状態です";
+pub static SERVER_LITTLEGIRL_TEXT: &str = "<span class=\"small\">わたしが喋っているの、しずかに聞けなくて？</span>";
 
 pub fn open_database() -> Result<Connection, actix_web::Error> {
     Connection::open(DATABASE).map_err(|err| ErrorInternalServerError(err))

@@ -29,7 +29,13 @@
 		<div id="blank"></div>
 		<div id="main">
 			<h1>"Strings"</h1>
-			<div><a onclick="toggle_form('login')">ログイン</a><a onclick="toggle_form('register')">新規登録</a></div>
+			<div>
+				{% if state=='end' %}
+				当サイトは開催終了しました。ありがとうございました。
+				{% else %}
+				<a onclick="toggle_form('login')">ログイン</a><a onclick="toggle_form('register')">新規登録</a>
+				{% endif %}
+			</div>
 			<div><a href="./strings/rulebook#summary">ゲーム概要</a><a href="./strings/rulebook#battle">戦闘システム</a><a href="./strings/rulebook#rule">利用規約</a><a href="./strings/characters">キャラクターリスト</a></div>
 		</div>
 		<div id="blank"></div>

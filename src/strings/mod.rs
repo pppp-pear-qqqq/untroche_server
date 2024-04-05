@@ -15,10 +15,14 @@ mod scene;
 mod battle;
 mod func;
 mod admin;
+mod archive;
 
 pub fn config(cfg: &mut web::ServiceConfig) {
     cfg.service(web::scope("/strings")
 		.route("", web::get().to(index))
+		.route("/archive", web::get().to(archive))
+        .route("/archive/get_timeline", web::get().to(archive::get_timeline))
+        .route("/archive/get_fragments", web::get().to(archive::get_fragments))
 		.route("/rulebook", web::get().to(rulebook))
 		.route("/characters", web::get().to(characters))
 		.route("/register", web::post().to(func::register))
@@ -56,6 +60,8 @@ pub fn config(cfg: &mut web::ServiceConfig) {
 		.route("/admin/update_players_fragment", web::post().to(admin::update_players_fragment))
 		.route("/admin/update_npc", web::post().to(admin::update_npc))
 		.route("/admin/add_players_fragment", web::post().to(admin::add_players_fragment))
+		.route("/admin/battle", web::post().to(admin::battle))
+		.route("/admin/talk", web::post().to(admin::talk))
         .service(Files::new("/", "resource/strings").show_files_listing())
     );
 }
@@ -85,9 +91,10 @@ async fn index(req: HttpRequest) -> Result<HttpResponse, actix_web::Error> {
                     liquid::ParserBuilder::with_stdlib()
                         .build().map_err(|err| ErrorInternalServerError(err))?
                         .parse(&fs::read_to_string("html/entrance.html").unwrap()).map_err(|err| ErrorInternalServerError(err))?
-                        .render(&liquid::object!({"fragment":Vec::<FormFragment>::new()})).map_err(|err| ErrorInternalServerError(err))?
+                        .render(&liquid::object!({"state":"end", "fragment":Vec::<FormFragment>::new()})).map_err(|err| ErrorInternalServerError(err))?
                 )
             ),
+            "littlegirl" => (),
             _ => return Err(ErrorInternalServerError("サーバーが不明な状態です。"))
         }
     }
@@ -160,12 +167,16 @@ async fn index(req: HttpRequest) -> Result<HttpResponse, actix_web::Error> {
                 liquid::ParserBuilder::with_stdlib()
                     .build()?
                     .parse(&fs::read_to_string("html/entrance.html").unwrap())?
-                    .render(&liquid::object!({"fragment":result }))?
+                    .render(&liquid::object!({"state":"run", "fragment":result }))?
             )
         )
     }().map_err(|err| ErrorInternalServerError(err))
 }
 
+async fn archive() -> HttpResponse {
+    HttpResponse::Ok()
+        .body(fs::read_to_string("html/archive.html").unwrap())
+}
 async fn rulebook() -> HttpResponse {
     HttpResponse::Ok()
         .body(fs::read_to_string("html/rulebook.html").unwrap())
