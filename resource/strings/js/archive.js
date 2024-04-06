@@ -150,7 +150,7 @@ function save(target, mode) {
 				case 'html': {
 					a.download = `log${now}.html`;
 					const data = document.querySelector('#timeline .log').innerHTML;
-					a.href = URL.createObjectURL(new Blob([`<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>"Strings".log</title><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;800&display=swap"><link rel="stylesheet" type="text/css" href="strings.css"></head><body class="back"><header><p class="system">"Strings".log</p></header><main><div id="timeline"><div class="scroll"><div class="log">${data}</div></div></div></main><footer></footer></body></html>`], {type: 'text/plain'}));
+					a.href = URL.createObjectURL(new Blob([`<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,user-scalable=no"><title>"Strings".log</title><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;800&display=swap"><link rel="stylesheet" type="text/css" href="strings.css"></head><body class="back"><header><p class="system">"Strings".log</p></header><main><div id="timeline"><div class="scroll"><div class="log">${data}</div></div></div></main><footer></footer></body></html>`], {type: 'text/plain'}));
 				} break;
 				default: alertify.error('モード指定が正しくありません'); return;
 			}
@@ -168,6 +168,7 @@ function save(target, mode) {
 		default: alertify.error('対象指定が正しくありません'); return;
 	}
 	a.click();
+	console.log('保存関数完了');
 }
 
 window.addEventListener('load', () => {

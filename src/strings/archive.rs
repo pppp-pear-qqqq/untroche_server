@@ -87,9 +87,10 @@ pub(super) async fn get_fragments(info: web::Query<Player>) -> Result<Json<Vec<F
 
 #[derive(Deserialize)]
 pub(super) struct SearchOrder {
+	level: u8,
 	location: String,
-	from: String,
-	to: String,
+	character: String,
+	mute: String,
 	word: Option<String>,
 }
 #[derive(Serialize)]
@@ -106,7 +107,7 @@ pub(super) struct Chat {
 }
 pub(super) async fn get_timeline(info: web::Query<SearchOrder>) -> Result<Json<Vec<Chat>>, actix_web::Error> {
 	// 入力値検証
-	if info.location.len() >= 128 || info.from.len() >= 128 || info.to.len() >= 128 || info.word.is_some() && info.word.as_ref().unwrap().len() >= 256 {
+	if info.location.len() >= 128 || info.character.len() >= 128 || info.mute.len() >= 128 || info.word.is_some() && info.word.as_ref().unwrap().len() >= 256 {
 		return Err(ErrorBadRequest("入力が長すぎます"));
 	}
 	// パラメータ生成
@@ -116,71 +117,38 @@ pub(super) async fn get_timeline(info: web::Query<SearchOrder>) -> Result<Json<V
 		sql.push("location=:location");
 		params.push((":location", &info.location));
 	}
-	let (plus, minus) = if !info.from.is_empty() || !info.to.is_empty() {
-		let mut from_plus = Vec::new();
-		let mut from_minus = Vec::new();
-		let mut to_plus = Vec::new();
-		let mut to_minus = Vec::new();
-		if !info.from.is_empty() {
-			for from in info.from.split(',').collect::<Vec<_>>() {
-				let from = from.trim();
-				let v = from.parse::<i16>().map_err(|_| ErrorBadRequest("発言者に数値でないものが含まれています"))?;
-				if from.chars().next() != Some('-') {
-					from_plus.push(v);
-				} else {
-					from_minus.push(v * -1);
-				}
-			}
+	let character = if !info.character.is_empty() {
+		let mut list = Vec::new();
+		for i in info.character.split(',') {
+			list.push(i.trim().parse::<i16>().map_err(|_| ErrorBadRequest("検索対象に数値でないものが含まれています"))?);
 		}
-		if !info.to.is_empty() {
-			for to in info.to.split(',').collect::<Vec<_>>() {
-				let to = to.trim();
-				let v = to.parse::<i16>().map_err(|_| ErrorBadRequest("発言者に数値でないものが含まれています"))?;
-				if to.chars().next() != Some('-') {
-					to_plus.push(v);
-				} else {
-					to_minus.push(v * -1);
-				}
-			}
+		let list = list.iter().map(|x| x.to_string()).collect::<Vec<String>>().join(",");
+		match info.level {
+			0 => Some(format!("from_eno IN ({0}) AND to_eno IN ({0})", list)),
+			1 => Some(format!("from_eno IN ({})", list)),
+			_ => Some(format!("(from_eno IN ({0}) OR to_eno IN ({0}))", list)),
 		}
-		let mut plus = Vec::new();
-		let mut minus = Vec::new();
-		if !from_plus.is_empty() {
-			plus.push(format!("from_eno IN ({})", from_plus.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(",")));
-		}
-		if !to_plus.is_empty() {
-			plus.push(format!("to_eno IN ({})", to_plus.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(",")));
-		}
-		if !from_minus.is_empty() {
-			minus.push(format!("from_eno NOT IN ({})", from_minus.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(",")));
-		}
-		if !to_minus.is_empty() {
-			minus.push(format!("to_eno NOT IN ({})", to_minus.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(",")));
-		}
-		(
-			if !plus.is_empty() {
-				Some(format!("({})", plus.join(" OR ")))
-			} else {
-				None
-			},
-			if !minus.is_empty() {
-				Some(format!("({})", minus.join(" OR ")))
-			} else {
-				None
-			},
-		)
-		// (from_eno IN (...) OR to_eno IN (...)) AND (from_eno NOT IN (...) OR to_eno NOT IN (...))
 	} else {
-		(None, None)
+		None
 	};
-	if let Some(plus) = &plus {
-		sql.push(plus);
+	if let Some(character) = &character {
+		sql.push(character);
 	}
-	if let Some(minus) = &minus {
-		sql.push(minus);
+	let mute = if !info.mute.is_empty() {
+		let mut list = Vec::new();
+		for i in info.mute.split(',') {
+			list.push(i.trim().parse::<i16>().map_err(|_| ErrorBadRequest("検索対象に数値でないものが含まれています"))?);
+		}
+		let list = list.iter().map(|x| x.to_string()).collect::<Vec<String>>().join(",");
+		Some(format!("from_eno NOT IN ({})", list))
+	} else {
+		None
+	};
+	if let Some(mute) = &mute {
+		sql.push(mute);
 	}
 	if info.word.is_some() {
-		sql.push("word='%:word%'");
+		sql.push("word LIKE '%'||:word||'%'");
 		params.push((":word", &info.word));
 	}
     // データベースに接続

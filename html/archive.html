@@ -2,7 +2,7 @@
 <html>
 	<head>
 		<meta charset="utf-8">
-		<meta name="viewport" content="width=device-width,initial-scale=1">
+		<meta name="viewport" content="width=device-width,user-scalable=no">
 		<title>"Strings"</title>
 		<link rel="preconnect" href="https://fonts.googleapis.com">
 		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -17,7 +17,7 @@
 		<script src="js/archive.js"></script>
 		<template>
 			<div class="talk">
-				<p class="to" onclick="toggle_display_talk(this.parentNode)"></p>
+				<p class="to" onclick="this.parentNode.classList.toggle('close')"></p>
 				<p class="acronym"></p>
 				<p class="name"></p>
 				<p class="eno"></p>
@@ -64,8 +64,9 @@
 						<option>岩場</option>
 						<option>森林</option>
 					</datalist></label>
-					<label>発言者Eno<span class="help">カンマ区切りで指定することができます。<br>複数指定した場合は、指定したうちの誰かの発言を抽出します。<br>番号を負の数にすることで、その相手の発言を含めないようにすることも可能です。</span><input type="text" name="from" placeholder="1,2,3 ..."></label>
-					<label>対象者Eno<span class="help">カンマ区切りで指定することができます。<br>複数指定した場合は、指定したうちの誰かに向けられた発言を抽出します。<br>番号を負の数にすることで、その相手宛ての発言を含めないようにすることも可能です。</span><input type="text" name="to" placeholder="1,2,3 ..."></label>
+					<label>Eno<span class="help">カンマ区切りで指定することができます。<br>検索レベルによって得られる結果が異なります。リストが空の場合は全ての発言を取得します。</span><input type="text" name="character" placeholder="1,2,3 ..."></label>
+					<label>検索レベル<span class="help">左 …… 発言者、対象者の両方がリストに含まれている発言を取得<br>中央 …… 発言者がリストに含まれている発言を取得、対象者は無関係<br>右 …… 発言者、対象者のどちらかがリストに含まれている発言を取得</span><input type="range" name="level" min="0" max="2"></label>
+					<label>除外Eno<span class="help">カンマ区切りで指定することができます。<br>検索レベルやリストの内容に関わらず、ここで指定したキャラクターの発言は取得されません。</span><input type="text" name="mute" placeholder="1,2,3 ..."></label>
 					<label>検索文字列<input name="word" type="text" nullable></label>
 					<button type="button" onclick="load(document.querySelector('#timeline .log')).timeline(params(this.parentNode))">検索</button>
 					<h4>ログ保存<span class="help">HTML形式で保存する場合、別途スタイルシートを保存し、それをファイルと同じ位置に置く必要があります。<br>ひとつスタイルシートを保存すれば、それと同じ位置に置くことによって複数のログで利用することが出来ます。<br>スタイルシートは<a href="css/strings.css" download>ここ</a>からダウンロードできます。</span></h4>

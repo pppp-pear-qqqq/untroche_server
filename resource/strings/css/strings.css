@@ -155,13 +155,14 @@ main {
 		flex-basis: 0;
 		flex-direction: column-reverse;
 		overflow-y: auto;
+		padding: 8px 0 8px 4px;
 	}
 	.log {
-		padding: 8px 4px 8px 8px;
 		flex-direction: column;
 		gap: 10px;
 	}
 	div.talk {
+		width: 30em;
 		padding: 4px 8px 0;
 		border-style: solid none none solid;
 		border-width: 1px;
@@ -171,6 +172,9 @@ main {
 		background-color: #40404022;
 		.to {
 			grid-column: 1 / 3;
+		}
+		.to::before {
+			content: '>> Eno.';
 		}
 		.to:empty {
 			display: none;
@@ -194,7 +198,6 @@ main {
 			content: 'Eno.';
 		}
 		.word {
-			width: 30em;
 			padding: 6px 0;
 			border: #767676 1px;
 			border-style: dashed none;
@@ -217,5 +220,8 @@ main {
 		.id::before {
 			content: 'id:';
 		}
+	}
+	div.talk.close>*:not(.to) {
+		display: none;
 	}
 }
